@@ -337,6 +337,9 @@ export async function handleChatbotResponse(sock, chatId, message, userMessage, 
     const isGroup = chatId.endsWith('@g.us');
     if (!await shouldAiReply(chatId, isGroup))
         return;
+    const aiStatus = await getAiStatus();
+    if (!aiStatus.availableProviders.length)
+        return;
     try {
         const botId = sock.user?.id || '';
         const botNumber = botId.split(':')[0];

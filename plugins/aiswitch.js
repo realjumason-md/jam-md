@@ -23,6 +23,11 @@ export default {
         const statusBefore = await getAiStatus();
         if (requested === 'gemini' || requested === 'groq' || requested === 'xai') {
             if (!statusBefore.availableProviders.includes(requested)) {
+                if (requested === 'groq' && statusBefore.availableProviders.includes('xai')) {
+                    return sock.sendMessage(chatId, {
+                        text: '❌ Groq is not configured, but an xAI key is available. Use `.aiswitch xai` or set a real `GROQ_API_KEY` before selecting Groq.'
+                    }, { quoted: message });
+                }
                 return sock.sendMessage(chatId, {
                     text: `❌ No ${requested} API key is available. Set the matching environment variable or use \`.aikey ${requested} <key>\`.`
                 }, { quoted: message });
