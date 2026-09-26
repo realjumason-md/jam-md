@@ -5,7 +5,6 @@ import path, { dirname } from 'path';
 import chalk from 'chalk';
 import syntaxerror from 'syntax-error';
 import { parsePhoneNumber as PhoneNumber } from 'awesome-phonenumber';
-import readline from 'readline';
 import QRCode from 'qrcode';
 import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
@@ -18,7 +17,7 @@ import pino from 'pino';
 import config from './config.js';
 import store from './lib/lightweight_store.js';
 import SaveCreds from './lib/session.js';
-import { server, PORT } from './lib/server.js';
+import { server, PORT, setPairingSocket, setPairingStatus } from './lib/server.js';
 import { printLog } from './lib/print.js';
 import { writeErrorLog } from './lib/logger.js';
 import { handleMessages, handleGroupParticipantUpdate, handleStatus, handleCall } from './lib/messageHandler.js';
@@ -38,7 +37,6 @@ setInterval(() => {
         process.exit(1);
     }
 }, 30000);
-const phoneNumber = config.pairingNumber || config.ownerNumber || "923051391005";
 // Auto-create data directory and default files on startup
 const DATA_DEFAULTS = {
     'owner.json': [],
@@ -78,32 +76,6 @@ global.botname = config.botName || "jam-md";
 global.themeemoji = "•";
 const pairingCode = !process.argv.includes("--qr-code");
 const useMobile = process.argv.includes("--mobile");
-let rl = null;
-let rlClosed = false;
-if (process.stdin.isTTY && !config.pairingNumber) {
-    rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout
-    });
-    rl.on('close', () => { rlClosed = true; });
-}
-const question = (text) => {
-    if (rl && !rlClosed) {
-        return new Promise((resolve) => rl.question(text, resolve));
-    }
-    else {
-        return Promise.resolve(config.ownerNumber || phoneNumber);
-    }
-};
-process.on('exit', () => {
-    if (rl && !rlClosed)
-        rl.close();
-});
-process.on('SIGINT', () => {
-    if (rl && !rlClosed)
-        rl.close();
-    process.exit(0);
-});
 function ensureSessionDirectory() {
     const sessionPath = path.join(__dirname, 'session');
     if (!existsSync(sessionPath)) {
@@ -216,6 +188,7 @@ async function startQasimDev() {
             keepAliveIntervalMs: 10000,
         });
         QasimDev.store = store;
+        setPairingSocket(QasimDev);
         const originalSendPresenceUpdate = QasimDev.sendPresenceUpdate;
         const originalReadMessages = QasimDev.readMessages;
         const originalSendReceipt = QasimDev.sendReceipt;
@@ -287,16 +260,7 @@ async function startQasimDev() {
                     printLog('error', `Error in handleMessages: ${err.message}`);
                     if (mek.key && mek.key.remoteJid) {
                         await QasimDev.sendMessage(mek.key.remoteJid, {
-                            text: '❌ An error occurred while processing your message.',
-                            contextInfo: {
-                                forwardingScore: 1,
-                                isForwarded: true,
-                                forwardedNewsletterMessageInfo: {
-                                    newsletterJid: '120363319098372999@newsletter',
-                                    newsletterName: 'GlobalTechInc',
-                                    serverMessageId: -1
-                                }
-                            }
+                            text: '❌ An error occurred while processing your message.'
                         }).catch(console.error);
                     }
                 }
@@ -345,70 +309,17 @@ async function startQasimDev() {
         QasimDev.public = true;
         QasimDev.serializeM = (m) => smsg(QasimDev, m, store);
         const isRegistered = state.creds?.registered === true;
+        setPairingStatus(isRegistered ? 'connected' : 'ready');
         if (pairingCode && !isRegistered) {
             if (useMobile)
                 throw new Error('Cannot use pairing code with mobile api');
-            let phoneNumberInput;
-            if (config.pairingNumber) {
-                phoneNumberInput = config.pairingNumber;
-            }
-            else if (process.env.PAIRING_NUMBER) {
-                phoneNumberInput = process.env.PAIRING_NUMBER;
-            }
-            else if (rl && !rlClosed) {
-                phoneNumberInput = await question(chalk.bgBlack(chalk.greenBright(`Please type your WhatsApp number 😍\nFormat: 923001234567 (without + or spaces) : `)));
-            }
-            else {
-                phoneNumberInput = phoneNumber;
-                printLog('info', `Using default phone number: ${phoneNumberInput}`);
-            }
-            phoneNumberInput = phoneNumberInput.replace(/[^0-9]/g, '');
-            const pn = PhoneNumber(`+${ phoneNumberInput}`);
-            if (!pn.valid) {
-                printLog('error', 'Invalid phone number format');
-                if (rl && !rlClosed)
-                    rl.close();
-                process.exit(1);
-            }
-            const doPairing = async (num, attempt = 1) => {
-                try {
-                    let code = await QasimDev.requestPairingCode(num);
-                    code = code?.match(/.{1,4}/g)?.join("-") || code;
-                    console.log(chalk.black(chalk.bgGreen(`Your Pairing Code : `)), chalk.black(chalk.white(code)));
-                    printLog('success', `Pairing code generated: ${code}`);
-                    if (rl && !rlClosed) {
-                        rl.close();
-                        rl = null;
-                    }
-                }
-                catch (error) {
-                    if (attempt < 3) {
-                        try {
-                            rmSync('./session', { recursive: true, force: true });
-                        }
-                        catch (_e) { /* ignore */ }
-                        await delay(3000);
-                        startQasimDev();
-                    }
-                    else {
-                        printLog('error', 'All 3 pairing attempts failed. Please restart manually.');
-                    }
-                }
-            };
-            setTimeout(() => doPairing(phoneNumberInput), 3000);
+            printLog('info', 'Pairing is ready. Open the web page and enter your WhatsApp number.');
         }
         else if (isRegistered) {
-            if (rl && !rlClosed) {
-                rl.close();
-                rl = null;
-            }
+            setPairingStatus('connected');
         }
         else {
             printLog('warning', 'Waiting for connection to establish...');
-            if (rl && !rlClosed) {
-                rl.close();
-                rl = null;
-            }
         }
         QasimDev.ev.on('connection.update', async (s) => {
             const { connection, lastDisconnect, qr } = s;
@@ -423,6 +334,7 @@ async function startQasimDev() {
                 }
             }
             if (connection === "open") {
+                setPairingStatus('connected');
                 printLog('success', 'Bot connected successfully!');
                 try {
                     const setbioModule = await import('./plugins/setbio.js');
@@ -442,16 +354,7 @@ async function startQasimDev() {
                     const botNumber = `${QasimDev.user.id.split(':')[0] }@s.whatsapp.net`;
                     const ghostStatus = (ghostMode && ghostMode.enabled) ? '\n👻 Stealth Mode: ACTIVE' : '';
                     await QasimDev.sendMessage(botNumber, {
-                        text: `🤖 Bot Connected Successfully!\n\n⏰ Time: ${new Date().toLocaleString()}\n✅ Status: Online and Ready!${ghostStatus}\n\n✅Make sure to join below channel`,
-                        contextInfo: {
-                            forwardingScore: 1,
-                            isForwarded: true,
-                            forwardedNewsletterMessageInfo: {
-                                newsletterJid: '120363319098372999@newsletter',
-                                newsletterName: 'GlobalTechInc',
-                                serverMessageId: -1
-                            }
-                        }
+                        text: `🤖 Bot Connected Successfully!\n\n⏰ Time: ${new Date().toLocaleString()}\n✅ Status: Online and Ready!${ghostStatus}`
                     });
                 }
                 catch (error) {
@@ -471,6 +374,7 @@ async function startQasimDev() {
                 console.log();
             }
             if (connection === 'close') {
+                setPairingStatus('reconnecting');
                 const statusCode = lastDisconnect?.error?.output?.statusCode;
                 const shouldReconnect = statusCode !== DisconnectReason.loggedOut && statusCode !== 401;
                 if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
@@ -505,10 +409,6 @@ async function startQasimDev() {
     }
     catch (error) {
         printLog('error', `Error in startQasimDev: ${error.message}`);
-        if (rl && !rlClosed) {
-            rl.close();
-            rl = null;
-        }
         await delay(5000);
         startQasimDev();
     }
@@ -521,8 +421,6 @@ async function main() {
     await delay(3000);
     startQasimDev().catch((error) => {
         printLog('error', `Fatal error: ${error.message}`);
-        if (rl && !rlClosed)
-            rl.close();
         process.exit(1);
     });
 }

@@ -116,7 +116,7 @@ git clone https://github.com/realjumason-md/jam-md.git
 cd jam-md
 npm install
 cp sample.env .env
-# Edit .env → add SESSION_ID and OWNER_NUMBER
+# Edit .env → add OWNER_NUMBER if needed
 npm start
 ```
 
@@ -128,41 +128,26 @@ npm start
 
 ### Step 1 — Generate or provide a session
 
-Use the session generator configured for your deployment, or leave `SESSION_ID` empty and use the terminal pairing flow below.
+Open your deployed jam-md web page, leave `SESSION_ID` empty, and use the pairing form on the home page.
 
 ### Step 2 — Generate your session
 
-**Option A — Pair Code** *(Recommended)*
+**Web Pair Code** *(Recommended)*
 
 1. Enter your bot's WhatsApp number with country code (e.g. `923001234567`)
 2. Click **Generate Pair Code**
 3. An 8-character code appears (e.g. `J38K-4PNS`)
 4. On your phone: **WhatsApp → ⋮ Menu → Linked Devices → Link a Device → Link with phone number**
 5. Enter the code — session is created
-6. Copy the **Session ID** shown on the page
+6. Keep the deployment running so the saved session can reconnect automatically
 
-**Option B — QR Code**
-
-1. Click the **QR Code** tab
-2. Scan the QR code with your WhatsApp
-3. Copy the **Session ID** shown after scanning
-
-### Step 3 — Add to `.env`
+### Step 3 — Optional persistent session
 
 ```env
 SESSION_ID=your_session_id_here
 ```
 
-### Alternative — Pairing via terminal
-
-Leave `SESSION_ID` empty and set:
-
-```env
-PAIRING_NUMBER=923001234567
-```
-
-> [!NOTE]
-> The bot will print an 8-character pairing code in the terminal on startup. Link it via **WhatsApp → Linked Devices → Link with phone number** within 60 seconds.
+You can omit `SESSION_ID` when using the web pairing form. The pairing code is shown in the web page, not printed in deployment logs. Enter your full number with country code, copy the displayed code, and paste it into WhatsApp.
 
 ---
 
@@ -177,8 +162,6 @@ cp sample.env .env
 ```env
 # ── REQUIRED (choose one) ────────────────────────────────────
 SESSION_ID=your_session_id_here
-# OR
-PAIRING_NUMBER=923001234567
 
 # ── REQUIRED ─────────────────────────────────────────────────
 OWNER_NUMBER=923000000000        # No + sign
@@ -564,11 +547,10 @@ DB_URL=./data/baileys.db
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `SESSION_ID` | ✅ *one of* | — | From mega-pairing.onrender.com |
-| `PAIRING_NUMBER` | ✅ *one of* | — | Phone number for terminal pairing |
+| `SESSION_ID` | ❌ | — | Optional saved WhatsApp session credentials |
 | `OWNER_NUMBER` | ✅ | `923051391007` | Your number, no `+` |
 | `BOT_NAME` | ❌ | `jam-md` | Bot display name |
-| `BOT_OWNER` | ❌ | `Qasim Ali` | Owner display name |
+| `BOT_OWNER` | ❌ | `Jaiton` | Owner display name |
 | `PACKNAME` | ❌ | `jam-md` | Sticker pack name |
 | `PREFIXES` | ❌ | `.,!,/,#` | Comma-separated prefixes |
 | `COMMAND_MODE` | ❌ | `public` | `public` or `private` |
@@ -653,7 +635,7 @@ export default {
 
 > [!IMPORTANT]
 > - Verify `SESSION_ID` is set to the session value generated for your deployment
-> - If using `PAIRING_NUMBER`, link within 60 seconds of the code appearing
+> - If no session is available, open the web page and request a pairing code there
 > - Reset session and reconnect: `npm run reset-session && npm start`
 
 ### `myAppStateKey not present` (pin/star broken)
