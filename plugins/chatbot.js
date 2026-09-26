@@ -106,6 +106,7 @@ async function requestGemini(prompt, image) {
     const key = await getAiKey('gemini');
     if (!key)
         throw new Error('GEMINI_API_KEY is not configured');
+    const model = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
     const parts = [{ text: prompt }];
     if (image) {
         parts.push({
@@ -115,9 +116,12 @@ async function requestGemini(prompt, image) {
             }
         });
     }
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(key)}`, {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+            'content-type': 'application/json',
+            'x-goog-api-key': key
+        },
         body: JSON.stringify({
             contents: [{ role: 'user', parts }],
             generationConfig: {
@@ -126,8 +130,17 @@ async function requestGemini(prompt, image) {
             }
         })
     });
-    if (!response.ok)
-        throw new Error(`Gemini HTTP ${response.status}`);
+    if (!response.ok) {
+        let detail = '';
+        try {
+            const errorData = await response.json();
+            detail = errorData?.error?.message || '';
+        }
+        catch {
+            // Keep the provider failure useful even when the response is not JSON.
+        }
+        throw new Error(`Gemini HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
+    }
     const data = await response.json();
     return normalizeResponse(data?.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join(''));
 }
@@ -161,8 +174,61 @@ async function requestGroq(prompt, image) {
             max_tokens: 1200
         })
     });
-    if (!response.ok)
-        throw new Error(`Groq HTTP ${response.status}`);
+    if (!response.ok) {
+        let detail = '';
+        try {
+            const errorData = await response.json();
+            detail = errorData?.error?.message || '';
+        }
+        catch {
+            // Keep the provider failure useful even when the response is not JSON.
+        }
+        throw new Error(`Groq HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
+    }
+    const data = await response.json();
+    return normalizeResponse(data?.choices?.[0]?.message?.content);
+}
+
+async function requestXai(prompt, image) {
+    const key = await getAiKey('xai');
+    if (!key)
+        throw new Error('XAI_API_KEY is not configured');
+    const model = image
+        ? (process.env.XAI_VISION_MODEL || process.env.XAI_MODEL || 'grok-2-vision-1212')
+        : (process.env.XAI_MODEL || 'grok-3-mini');
+    const content = [{ type: 'text', text: prompt }];
+    if (image) {
+        content.push({
+            type: 'image_url',
+            image_url: {
+                url: `data:${image.mimeType};base64,${image.data}`
+            }
+        });
+    }
+    const response = await fetch('https://api.x.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+            authorization: `Bearer ${key}`,
+            'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+            model,
+            messages: [{ role: 'user', content }],
+            temperature: 0.85,
+            max_tokens: 1200
+        })
+    });
+    if (!response.ok) {
+        let detail = '';
+        try {
+            const errorData = await response.json();
+            detail = errorData?.error?.message || '';
+        }
+        catch {
+            // Keep the provider failure useful even when the response is not JSON.
+        }
+        throw new Error(`xAI HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
+    }
     const data = await response.json();
     return normalizeResponse(data?.choices?.[0]?.message?.content);
 }
@@ -205,7 +271,9 @@ export async function getAIResponse(userMessage, userContext, message) {
         try {
             const response = provider === 'gemini'
                 ? await requestGemini(prompt, image)
-                : await requestGroq(prompt, image);
+                : provider === 'groq'
+                    ? await requestGroq(prompt, image)
+                    : await requestXai(prompt, image);
             if (response)
                 return response;
         }
@@ -214,14 +282,16 @@ export async function getAIResponse(userMessage, userContext, message) {
         }
     }
     if (requestedProvider === 'auto' && !image) {
-        return requestLegacyApi(prompt);
+        const legacyResponse = await requestLegacyApi(prompt);
+        if (legacyResponse)
+            return legacyResponse;
     }
     if (!providers.length) {
         throw new Error(requestedProvider === 'auto'
             ? 'No AI provider is configured'
             : `No ${requestedProvider} API key is configured`);
     }
-    return '';
+    throw new Error('Configured AI providers did not return a response');
 }
 
 export async function handleChatbotResponse(sock, chatId, message, userMessage, senderId) {
@@ -290,7 +360,7 @@ export async function handleChatbotResponse(sock, chatId, message, userMessage, 
         try {
             await sock.sendMessage(chatId, {
                 text: error.message.includes('API key')
-                    ? 'AI is not configured yet. Add a Gemini or Groq key with the owner command `.aikey`.'
+                    ? 'AI is not configured yet. Add a Gemini, Groq, or xAI key with the owner command `.aikey`.'
                     : 'I could not process that right now. Try again in a moment.',
                 quoted: message
             });
@@ -302,7 +372,7 @@ export async function handleChatbotResponse(sock, chatId, message, userMessage, 
 }
 export default {
     command: 'chatbot',
-    aliases: ['bot', 'ai', 'achat'],
+    aliases: ['bot', 'achat'],
     category: 'admin',
     description: 'Enable or disable AI replies in this chat',
     usage: '.chatbot <on|off>',
@@ -316,7 +386,7 @@ export default {
                 text: `*🤖 CHATBOT SETUP*\n\n` +
                     `*Status:* ${status.globalEnabled ? 'Enabled' : 'Disabled'}\n` +
                     `*Scope:* Direct messages and groups\n` +
-                    `*APIs:* ${API_ENDPOINTS.length} endpoints with fallback\n\n` +
+                    `*Providers:* ${[...status.availableProviders, 'legacy fallback'].join(', ')}\n\n` +
                     `*Commands:*\n` +
                     `• \`.chatbot on\` - Enable replies in this chat\n` +
                     `• \`.chatbot off\` - Disable replies in this chat\n\n` +

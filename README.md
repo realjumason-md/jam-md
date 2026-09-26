@@ -180,8 +180,11 @@ TIMEZONE=Asia/Karachi
 REMOVEBG_KEY=                    # https://remove.bg/api
 GIPHY_API_KEY=                   # https://developers.giphy.com
 GEMINI_API_KEY=                  # Google AI Studio
+GEMINI_MODEL=gemini-3.8-flash
 GROQ_API_KEY=                    # Groq Console
-AI_PROVIDER=auto                 # auto, gemini, or groq
+XAI_API_KEY=                     # xAI Console (or use GROQ_API_KEY only for a real gsk_ Groq key)
+XAI_MODEL=grok-3-mini
+AI_PROVIDER=auto                 # auto, gemini, groq, or xai
 
 # ── PERFORMANCE ──────────────────────────────────────────────
 PORT=5000

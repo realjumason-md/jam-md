@@ -30,6 +30,7 @@ const config = {
     removeBgKey: process.env.REMOVEBG_KEY || '',
     geminiApiKey: process.env.GEMINI_API_KEY || '',
     groqApiKey: process.env.GROQ_API_KEY || '',
+    xaiApiKey: process.env.XAI_API_KEY || '',
     aiProvider: process.env.AI_PROVIDER || 'auto',
     // Warn system
     warnCount: 3,
