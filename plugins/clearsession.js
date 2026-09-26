@@ -1,7 +1,7 @@
 import fs from 'fs';
-import path from 'path';
 import isOwnerOrSudo from '../lib/isOwner.js';
 import { channelInfo } from '../lib/messageConfig.js';
+import { SESSION_DIR } from '../lib/paths.js';
 export default {
     command: 'clearsession',
     aliases: ['clearses', 'csession'],
@@ -16,7 +16,7 @@ export default {
             if (!message.key.fromMe && !isOwner) {
                 return await sock.sendMessage(chatId, { text: '*This command can only be used by the owner!*', ...channelInfo });
             }
-            const sessionDir = path.join(process.cwd(), 'session');
+            const sessionDir = SESSION_DIR;
             if (!fs.existsSync(sessionDir)) {
                 return await sock.sendMessage(chatId, { text: '*Session directory not found!*', ...channelInfo });
             }

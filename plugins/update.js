@@ -5,6 +5,7 @@ import { exec } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import https from 'https';
+import { SESSION_DIR } from '../lib/paths.js';
 function run(cmd) {
     return new Promise((resolve, reject) => {
         exec(cmd, { windowsHide: true }, (err, stdout, stderr) => {
@@ -34,7 +35,8 @@ async function updateViaGit() {
     const commits = alreadyUpToDate ? '' : await run(`git log --pretty=format:"%h %s (%an)" ${oldRev}..${newRev}`).catch(() => '');
     const files = alreadyUpToDate ? '' : await run(`git diff --name-status ${oldRev} ${newRev}`).catch(() => '');
     await run(`git reset --hard ${newRev}`);
-    await run('git clean -fd');
+    // Do not clean untracked files: session credentials and runtime data may
+    // live outside the tracked source tree and must survive an update.
     return { oldRev, newRev, alreadyUpToDate, commits, files };
 }
 function downloadFile(url, dest, visited = new Set()) {
@@ -145,7 +147,23 @@ async function updateViaZip(sock, chatId, message, zipOverride) {
     await extractZip(zipPath, extractTo);
     const [root] = fs.readdirSync(extractTo).map(n => path.join(extractTo, n));
     const srcRoot = fs.existsSync(root) && fs.lstatSync(root).isDirectory() ? root : extractTo;
-    const ignore = ['node_modules', '.git', 'session', 'tmp', 'tmp/', 'temp', 'data', 'baileys_store.json'];
+    const relativeSessionPath = path.relative(process.cwd(), SESSION_DIR);
+    const sessionEntry = relativeSessionPath &&
+        !relativeSessionPath.startsWith('..') &&
+        !path.isAbsolute(relativeSessionPath)
+        ? relativeSessionPath.split(path.sep)[0]
+        : 'session';
+    const ignore = [...new Set([
+        'node_modules',
+        '.git',
+        sessionEntry,
+        'session',
+        'tmp',
+        'tmp/',
+        'temp',
+        'data',
+        'baileys_store.json'
+    ])];
     const copied = [];
     let preservedOwner = null;
     let preservedBotOwner = null;

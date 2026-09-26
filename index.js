@@ -21,6 +21,7 @@ import { server, PORT, clearPairingSocket, setPairingSocket, setPairingStatus } 
 import { printLog } from './lib/print.js';
 import { writeErrorLog } from './lib/logger.js';
 import { handleMessages, handleGroupParticipantUpdate, handleStatus, handleCall } from './lib/messageHandler.js';
+import { SESSION_DIR } from './lib/paths.js';
 import commandHandler from './lib/commandHandler.js';
 store.readFromFile();
 setInterval(() => store.writeToFile(), config.storeWriteInterval || 10000);
@@ -77,15 +78,14 @@ global.themeemoji = "•";
 const pairingCode = !process.argv.includes("--qr-code");
 const useMobile = process.argv.includes("--mobile");
 function ensureSessionDirectory() {
-    const sessionPath = path.join(__dirname, 'session');
-    if (!existsSync(sessionPath)) {
-        mkdirSync(sessionPath, { recursive: true });
+    if (!existsSync(SESSION_DIR)) {
+        mkdirSync(SESSION_DIR, { recursive: true });
     }
-    return sessionPath;
+    return SESSION_DIR;
 }
 function hasValidSession() {
     try {
-        const credsPath = path.join(__dirname, 'session', 'creds.json');
+        const credsPath = path.join(SESSION_DIR, 'creds.json');
         if (!existsSync(credsPath))
             return false;
         const fileContent = fs.readFileSync(credsPath, 'utf8');
@@ -102,7 +102,7 @@ function hasValidSession() {
             if (creds.registered === false) {
                 printLog('warning', 'Session not registered. Clearing for fresh pairing...');
                 try {
-                    rmSync(path.join(__dirname, 'session'), { recursive: true, force: true });
+                    rmSync(SESSION_DIR, { recursive: true, force: true });
                 }
                 catch (_e) { /* ignore */ }
                 return false;
@@ -158,7 +158,7 @@ async function startQasimDev() {
         const { version } = await fetchLatestBaileysVersion();
         ensureSessionDirectory();
         await delay(1000);
-        const { state, saveCreds } = await useMultiFileAuthState(`./session`);
+        const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
         const _saveCreds = async () => {
             ensureSessionDirectory();
             await saveCreds();
@@ -384,7 +384,7 @@ async function startQasimDev() {
                 const shouldReconnect = statusCode !== DisconnectReason.loggedOut && statusCode !== 401;
                 if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
                     try {
-                        rmSync('./session', { recursive: true, force: true });
+                        rmSync(SESSION_DIR, { recursive: true, force: true });
                     }
                     catch (_e) { /* ignore */ }
                     await delay(3000);
@@ -430,23 +430,6 @@ async function main() {
     });
 }
 main();
-// Session cleanup interval
-const sessionDir = path.join(process.cwd(), 'session');
-setInterval(() => {
-    if (!fs.existsSync(sessionDir))
-        return;
-    fs.readdir(sessionDir, (err, files) => {
-        if (err)
-            return;
-        for (const file of files) {
-            if (file === 'creds.json')
-                continue;
-            if (file.startsWith('app-state-sync-key-'))
-                continue;
-            fs.unlink(path.join(sessionDir, file), () => { });
-        }
-    });
-}, 3 * 60 * 1000);
 // Temp folder setup
 const customTemp = path.join(process.cwd(), 'temp');
 if (!fs.existsSync(customTemp))

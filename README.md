@@ -145,6 +145,8 @@ Open your deployed jam-md web page, leave `SESSION_ID` empty, and use the pairin
 
 ```env
 SESSION_ID=your_session_id_here
+# Optional: use a persistent mounted volume for the session files
+SESSION_PATH=./session
 ```
 
 You can omit `SESSION_ID` when using the web pairing form. The pairing code is shown in the web page, not printed in deployment logs. Enter your full number with country code, copy the displayed code, and paste it into WhatsApp.
@@ -667,7 +669,7 @@ Send any message to the bot — WhatsApp re-syncs keys automatically. They are n
 ### Data lost after restart
 
 > [!CAUTION]
-> Cloud platforms reset the filesystem on redeploy. Add `MONGO_URL` to use MongoDB — [MongoDB Atlas](https://cloud.mongodb.com) has a free tier.
+> Cloud platforms reset the filesystem on redeploy. Set `SESSION_PATH` to a persistent mounted volume, or set `SESSION_ID` so the session can be restored after a fresh deployment. Add `MONGO_URL` to use MongoDB for bot data — [MongoDB Atlas](https://cloud.mongodb.com) has a free tier.
 
 ### Port conflict
 
