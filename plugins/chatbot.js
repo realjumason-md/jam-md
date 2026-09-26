@@ -390,9 +390,6 @@ export async function handleChatbotResponse(sock, chatId, message, userMessage, 
         messages.push(`User: ${imagePrompt}`);
         while (messages.length > 40)
             messages.shift();
-        await sock.sendMessage(chatId, {
-            react: { text: image ? '👀' : '🤔', key: message.key }
-        });
         await showTyping(sock, chatId);
         const response = await getAIResponse(imagePrompt, {
             messages,
