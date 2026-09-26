@@ -17,17 +17,7 @@ if (!HAS_DB && !fs.existsSync(configPath)) {
         reactOn: false
     }, null, 2));
 }
-const channelInfo = {
-    contextInfo: {
-        forwardingScore: 1,
-        isForwarded: true,
-        forwardedNewsletterMessageInfo: {
-            newsletterJid: '120363319098372999@newsletter',
-            newsletterName: 'GlobalTechInc',
-            serverMessageId: -1
-        }
-    }
-};
+const channelInfo = {};
 async function readConfig() {
     try {
         if (HAS_DB) {

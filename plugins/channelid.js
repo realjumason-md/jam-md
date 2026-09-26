@@ -13,7 +13,7 @@ export default {
         }
         if (!url || !url.includes('whatsapp.com/channel/')) {
             return await sock.sendMessage(chatId, {
-                text: 'Please provide a valid WhatsApp Channel URL.\n\n*Example:* .channelid https://whatsapp.com/channel/xxxxx'
+                text: 'Please provide a valid WhatsApp Channel URL.'
             }, { quoted: message });
         }
         const code = url.split('/').pop();

@@ -90,7 +90,7 @@ export default {
                     externalAdReply: {
                         title: "SYSTEM SETTINGS PANEL",
                         body: "Configuration Status",
-                        thumbnailUrl: "https://github.com/GlobalTechInfo.png",
+                        thumbnailUrl: "https://github.com/realjumason-md.png",
                         mediaType: 1,
                         renderLargerThumbnail: true
                     }

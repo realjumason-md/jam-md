@@ -12,7 +12,7 @@ export default {
             const link = args[0];
             if (!link) {
                 return await sock.sendMessage(chatId, {
-                    text: `❌ *Missing Link!*\n\nExample: .gitclone2 https://github.com/GlobalTechInfo/MEGA-MD`
+                    text: `❌ *Missing Link!*\n\nExample: .gitclone2 https://github.com/realjumason-md/jam-md`
                 }, { quoted: message });
             }
             if (!regex.test(link)) {

@@ -15,7 +15,7 @@ export default {
         try {
             if (!args[0]) {
                 await sock.sendMessage(chatId, {
-                    text: '⚠️ Please enter the Telegram sticker URL!\n\nExample: .tgstk https://t.me/addstickers/Porcientoreal',
+                    text: '⚠️ Please enter a Telegram sticker URL.',
                     ...channelInfo
                 }, { quoted: message });
                 return;

@@ -22,17 +22,7 @@ async function handleJoinEvent(sock, id, participants) {
     const groupMetadata = await sock.groupMetadata(id);
     const groupName = groupMetadata.subject;
     const groupDesc = groupMetadata.desc || 'No description available';
-    const channelInfo = {
-        contextInfo: {
-            forwardingScore: 1,
-            isForwarded: true,
-            forwardedNewsletterMessageInfo: {
-                newsletterJid: '120363319098372999@newsletter',
-                newsletterName: 'jam-md',
-                serverMessageId: -1
-            }
-        }
-    };
+    const channelInfo = {};
     for (const participant of participants) {
         try {
             const participantString = typeof participant === 'string' ? participant : (participant.id || participant.toString());

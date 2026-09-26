@@ -1,6 +1,6 @@
 #!/bin/bash
-# MEGA-MD Railway One-Click Deployer
-# Usage: bash <(curl -s https://raw.githubusercontent.com/GlobalTechInfo/MEGA-MD/main/lib/railway.sh)
+# jam-md Railway One-Click Deployer
+# Usage: bash <(curl -s https://raw.githubusercontent.com/realjumason-md/jam-md/main/lib/railway.sh)
 
 set -e
 
@@ -14,7 +14,7 @@ NC='\033[0m'
 echo -e "${CYAN}"
 echo "╔═══════════════════════════════════════╗"
 echo "║        jam-md Railway Deployer        ║"
-echo "║          by GlobalTechInfo            ║"
+echo "║             by Jaiton                ║"
 echo "╚═══════════════════════════════════════╝"
 echo -e "${NC}"
 
@@ -35,7 +35,7 @@ echo ""
 echo -e "${BOLD}📋 Enter your bot details:${NC}"
 echo ""
 
-read -p "$(echo -e ${CYAN}Session ID (GlobalTechInfo/MEGA-MD_xxxxx): ${NC})" SESSION_ID
+read -p "$(echo -e ${CYAN}Session ID (your_session_id_here): ${NC})" SESSION_ID
 if [ -z "$SESSION_ID" ]; then
     echo -e "${RED}❌ Session ID is required!${NC}"
     exit 1
@@ -59,8 +59,8 @@ echo ""
 # Clone if not in repo
 if [ ! -f "railway.json" ]; then
     echo -e "${YELLOW}📦 Cloning jam-md repo...${NC}"
-    git clone https://github.com/GlobalTechInfo/MEGA-MD mega-md-deploy
-    cd mega-md-deploy
+    git clone https://github.com/realjumason-md/jam-md jam-md-deploy
+    cd jam-md-deploy
 fi
 
 # Init railway project

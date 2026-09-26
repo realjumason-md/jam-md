@@ -29,7 +29,7 @@ export default {
             const caption = `📱 *Telegram Info*\n\n` +
                 `👤 Title: ${result.title || 'N/A'}\n` +
                 `📝 Description: ${result.description || 'N/A'}\n` +
-                `🔗 Link: ${result.url || `https://t.me/${username}`}`;
+                `🔗 Profile: ${result.url || username}`;
             if (profileImage) {
                 await sock.sendMessage(chatId, { image: { url: profileImage }, caption }, { quoted: message });
             }

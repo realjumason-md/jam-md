@@ -43,7 +43,7 @@
     "url": "https://github.com/realjumason-md/jam-md/issues"
   },
   "license": "MIT",
-  "author": "Qasim Ali",
+  "author": "Jaiton",
   "dependencies": {
     "@hapi/boom": "^10.0.1",
     "@whiskeysockets/baileys": "^6.7.24",

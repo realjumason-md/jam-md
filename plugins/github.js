@@ -10,7 +10,7 @@ export default {
     async handler(sock, message, args, context) {
         const chatId = context.chatId || message.key.remoteJid;
         try {
-            const res = await fetch('https://api.github.com/repos/GlobalTechInfo/MEGA-MD');
+            const res = await fetch('https://api.github.com/repos/realjumason-md/jam-md');
             if (!res.ok)
                 throw new Error('Error fetching repository data');
             const json = await res.json();

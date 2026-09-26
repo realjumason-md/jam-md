@@ -1,6 +1,10 @@
-FROM quay.io/qasimtech/mega-md:latest
+FROM node:20-bookworm-slim
 
 WORKDIR /root/jam-md
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg libvips-dev libwebp-dev build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json ./
 RUN npm install

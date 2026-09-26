@@ -3,9 +3,9 @@ const _prefixes = process.env.PREFIXES ? process.env.PREFIXES.split(',').map((pr
 const config = {
     // Bot Identity
     botName: process.env.BOT_NAME || 'jam-md',
-    botOwner: process.env.BOT_OWNER || 'Qasim Ali',
+    botOwner: process.env.BOT_OWNER || 'Jaiton',
     ownerNumber: process.env.OWNER_NUMBER || '923051391007',
-    author: process.env.AUTHOR || 'GlobalTechInfo',
+    author: process.env.AUTHOR || 'Jaiton',
     packname: process.env.PACKNAME || 'jam-md',
     description: process.env.DESCRIPTION || 'High performance multi-device WhatsApp bot',
     version: '6.0.0',
@@ -15,9 +15,9 @@ const config = {
     commandMode: process.env.COMMAND_MODE || 'public',
     timeZone: process.env.TIMEZONE || 'Asia/Karachi',
     // Links
-    channelLink: process.env.CHANNEL_LINK || 'https://whatsapp.com/channel/0029VagJIAr3bbVBCpEkAM07',
+    channelLink: process.env.CHANNEL_LINK || '',
     updateZipUrl: process.env.UPDATE_URL || 'https://github.com/realjumason-md/jam-md/archive/refs/heads/main.zip',
-    ytChannel: process.env.YT_CHANNEL || 'GlobalTechInfo',
+    ytChannel: process.env.YT_CHANNEL || 'jam-md',
     // Session
     sessionId: process.env.SESSION_ID || '',
     pairingNumber: process.env.PAIRING_NUMBER || '',

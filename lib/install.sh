@@ -27,7 +27,7 @@ echo "✅ Node.js $(node -v) installed"
 
 # Clone repo
 echo "📥 Cloning jam-md..."
-git clone https://github.com/GlobalTechInfo/MEGA-MD /root/jam-md
+git clone https://github.com/realjumason-md/jam-md /root/jam-md
 cd /root/jam-md
 
 # Install npm packages

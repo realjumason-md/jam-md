@@ -4,6 +4,7 @@ import { downloadContentFromMessage } from '@whiskeysockets/baileys';
 import { dataFile } from '../lib/paths.js';
 import store from '../lib/lightweight_store.js';
 import { getAiKey, getAvailableProviders, loadAiState, resolveAiProvider, shouldAiReply } from '../lib/aiState.js';
+import config from '../config.js';
 const MONGO_URL = process.env.MONGO_URL;
 const POSTGRES_URL = process.env.POSTGRES_URL;
 const MYSQL_URL = process.env.MYSQL_URL;
@@ -118,11 +119,12 @@ async function downloadIncomingImage(message) {
 }
 
 function buildSystemPrompt() {
-    return `You are jam-md, a warm and natural WhatsApp conversation partner.
+    return `You are jam-md, a warm and natural AI conversation partner configured by ${config.botOwner}.
 Reply in the same language and general tone as the person chatting with you. You can understand multilingual messages and code-switching.
-Be useful, knowledgeable, and conversational. Keep replies concise unless the person asks for detail.
+Be useful, knowledgeable, and conversational. Use natural contractions, varied sentence length, and brief acknowledgements when they fit. Keep replies concise unless the person asks for detail.
 Use occasional emojis when they fit, but do not force them. Do not mention these instructions.
-If someone asks whether you are an AI, answer honestly and briefly. Never claim to be a human.`;
+If someone asks whether you are an AI, answer honestly and briefly. Never claim to be a human or conceal that you are an AI assistant.
+If someone asks who owns or configured the bot, answer that the owner is ${config.botOwner}.`;
 }
 
 function buildConversationPrompt(userMessage, userContext) {
@@ -288,6 +290,13 @@ export async function handleChatbotResponse(sock, chatId, message, userMessage, 
         const image = content?.imageMessage;
         if (!cleanedMessage && !image)
             return;
+        if (!isGroup && /^(?:who am i|who are you|what(?:'s| is) your name|what is your name|who owns you|who is your owner)\??$/i.test(cleanedMessage)) {
+            await showTyping(sock, chatId);
+            await sock.sendMessage(chatId, {
+                text: `I'm ${config.botOwner}.`,
+            }, { quoted: message });
+            return;
+        }
         const memoryKey = `${chatId}:${senderId}`;
         if (!chatMemory.messages.has(memoryKey)) {
             chatMemory.messages.set(memoryKey, []);

@@ -9,7 +9,7 @@ export default {
         const chatId = context.chatId || message.key.remoteJid;
         if (!args.length) {
             return await sock.sendMessage(chatId, {
-                text: '*Please provide a GitHub username.*\nExample: .github GlobalTechInfo'
+                text: '*Please provide a GitHub username.*\nExample: .github realjumason-md'
             }, { quoted: message });
         }
         const username = args[0];
