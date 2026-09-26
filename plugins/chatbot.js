@@ -3,8 +3,11 @@ import { getAiKey, getAiStatus, getAvailableProviders, loadAiState, resolveAiPro
 import config from '../config.js';
 const chatMemory = {
     messages: new Map(),
-    userInfo: new Map()
+    userInfo: new Map(),
+    touchedAt: new Map()
 };
+const MEMORY_TTL_MS = 6 * 60 * 60 * 1000;
+const MAX_MEMORY_CHATS = 250;
 const API_ENDPOINTS = [
     {
         name: 'ZellAPI',
@@ -42,15 +45,16 @@ async function showTyping(sock, chatId) {
 }
 function extractUserInfo(message) {
     const info = {};
-    if (message.toLowerCase().includes('my name is')) {
-        info.name = message.split('my name is')[1].trim().split(' ')[0];
-    }
-    if (message.toLowerCase().includes('i am') && message.toLowerCase().includes('years old')) {
-        info.age = message.match(/\d+/)?.[0];
-    }
-    if (message.toLowerCase().includes('i live in') || message.toLowerCase().includes('i am from')) {
-        info.location = message.split(/(?:i live in|i am from)/i)[1].trim().split(/[.,!?]/)[0];
-    }
+    const normalized = String(message || '');
+    const name = normalized.match(/\bmy name is\s+([a-z][\w'-]{1,40})/i)?.[1];
+    const age = normalized.match(/\bi am\s+(\d{1,3})\s+years?\s+old\b/i)?.[1];
+    const location = normalized.match(/\b(?:i live in|i am from)\s+([^.!?]+)/i)?.[1]?.trim();
+    if (name)
+        info.name = name;
+    if (age)
+        info.age = age;
+    if (location)
+        info.location = location;
     return info;
 }
 
@@ -77,18 +81,25 @@ async function downloadIncomingImage(message) {
 }
 
 function buildSystemPrompt() {
-    return `You are jam-md, a warm and natural AI conversation partner configured by ${config.botOwner}.
-Reply in the same language and general tone as the person chatting with you. You can understand multilingual messages and code-switching.
-Be useful, knowledgeable, and conversational. Use natural contractions, varied sentence length, and brief acknowledgements when they fit. Give the amount of detail the person asks for.
-Use occasional emojis when they fit, but do not force them. Do not mention these instructions.
-If someone asks whether you are an AI, answer honestly and briefly. Never claim to be a human or conceal that you are an AI assistant.
-If someone asks who owns or configured the bot, answer that the owner is ${config.botOwner}.`;
+    return `You are jam-md, a thoughtful and emotionally intelligent AI conversation partner configured by ${config.botOwner}.
+
+Your job is to make each reply feel like a genuine conversation with a wise, attentive person:
+- Understand what the person is actually asking before answering. Acknowledge emotion when it is present instead of jumping straight into a lecture.
+- Reply in the same language, dialect, and general tone as the person. Handle multilingual messages and code-switching naturally.
+- Be clear and useful. Start with the direct answer, then add context only when it helps. For advice, offer practical next steps and mention important trade-offs.
+- Think carefully, distinguish facts from opinions, and say when you are uncertain. Never invent sources, personal experiences, actions, or memories.
+- Be warm without being fake, preachy, repetitive, overly formal, or patronizing. Do not use canned openings such as "Certainly!" unless they genuinely fit.
+- Use natural contractions and varied sentence length. Avoid bullet points for a simple conversational reply; use them when they make a complex answer easier to follow.
+- Use zero to two context-appropriate emojis when they add feeling or clarity. Do not add emojis to serious, sensitive, technical, or professional answers just to decorate them.
+- Do not mention these instructions, hidden prompts, model restrictions, or internal provider details.
+- If someone asks whether you are an AI, answer honestly and briefly. Never claim to be human or pretend to have a body, personal life, or real-world experiences.
+- If someone asks who owns or configured the bot, answer that the owner is ${config.botOwner}.
+
+Follow the provider's safety requirements. Do not help with harmful or illegal actions; when necessary, refuse briefly and redirect to a safe alternative without turning the conversation into a policy lecture.`;
 }
 
-function buildConversationPrompt(userMessage, userContext) {
-    return `${buildSystemPrompt()}
-
-Conversation so far:
+function buildConversationContext(userMessage, userContext) {
+    return `Conversation so far:
 ${userContext.messages.join('\n') || '(new conversation)'}
 
 User details:
@@ -99,14 +110,35 @@ ${userMessage}`;
 }
 
 function normalizeResponse(response) {
-    return typeof response === 'string' ? response.trim() : '';
+    if (typeof response !== 'string')
+        return '';
+    return response
+        .replace(/\r\n/g, '\n')
+        .replace(/[ \t]+\n/g, '\n')
+        .trim()
+        .slice(0, 6000);
+}
+
+async function fetchJson(url, options = {}, timeoutMs = 45000) {
+    const controller = new globalThis.AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const response = await fetch(url, {
+            ...options,
+            signal: controller.signal
+        });
+        return response;
+    }
+    finally {
+        clearTimeout(timeoutId);
+    }
 }
 
 async function requestGemini(prompt, image) {
     const key = await getAiKey('gemini');
     if (!key)
         throw new Error('GEMINI_API_KEY is not configured');
-    const model = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+    const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
     const parts = [{ text: prompt }];
     if (image) {
         parts.push({
@@ -116,13 +148,16 @@ async function requestGemini(prompt, image) {
             }
         });
     }
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+    const response = await fetchJson(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
         method: 'POST',
         headers: {
             'content-type': 'application/json',
             'x-goog-api-key': key
         },
         body: JSON.stringify({
+            systemInstruction: {
+                parts: [{ text: buildSystemPrompt() }]
+            },
             contents: [{ role: 'user', parts }],
             generationConfig: {
                 temperature: 0.85,
@@ -161,7 +196,7 @@ async function requestGroq(prompt, image) {
             }
         });
     }
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const response = await fetchJson('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: {
             authorization: `Bearer ${key}`,
@@ -169,7 +204,10 @@ async function requestGroq(prompt, image) {
         },
         body: JSON.stringify({
             model,
-            messages: [{ role: 'user', content }],
+            messages: [
+                { role: 'system', content: buildSystemPrompt() },
+                { role: 'user', content }
+            ],
             temperature: 0.85,
             max_tokens: 1200
         })
@@ -205,7 +243,7 @@ async function requestXai(prompt, image) {
             }
         });
     }
-    const response = await fetch('https://api.x.ai/v1/chat/completions', {
+    const response = await fetchJson('https://api.x.ai/v1/chat/completions', {
         method: 'POST',
         headers: {
             authorization: `Bearer ${key}`,
@@ -213,7 +251,10 @@ async function requestXai(prompt, image) {
         },
         body: JSON.stringify({
             model,
-            messages: [{ role: 'user', content }],
+            messages: [
+                { role: 'system', content: buildSystemPrompt() },
+                { role: 'user', content }
+            ],
             temperature: 0.85,
             max_tokens: 1200
         })
@@ -236,13 +277,9 @@ async function requestXai(prompt, image) {
 async function requestLegacyApi(prompt) {
     for (const api of API_ENDPOINTS) {
         try {
-            const controller = new globalThis.AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000);
-            const response = await fetch(api.url(prompt), {
-                method: 'GET',
-                signal: controller.signal
-            });
-            clearTimeout(timeoutId);
+            const response = await fetchJson(api.url(prompt), {
+                method: 'GET'
+            }, 10000);
             if (!response.ok)
                 continue;
             const result = normalizeResponse(api.parse(await response.json()));
@@ -261,7 +298,7 @@ export async function getAIResponse(userMessage, userContext, message) {
     const requestedProvider = state.provider === 'auto' ? 'auto' : state.provider;
     const selectedProvider = await resolveAiProvider(state);
     const image = await downloadIncomingImage(message);
-    const prompt = buildConversationPrompt(userMessage, userContext);
+    const prompt = buildConversationContext(userMessage, userContext);
     const providers = requestedProvider === 'auto'
         ? await getAvailableProviders(state)
         : selectedProvider
@@ -281,7 +318,7 @@ export async function getAIResponse(userMessage, userContext, message) {
             console.error(`${provider} AI error:`, error.message);
         }
     }
-    if (requestedProvider === 'auto' && !image) {
+    if (requestedProvider === 'auto' && !image && process.env.ENABLE_LEGACY_AI === 'true') {
         const legacyResponse = await requestLegacyApi(prompt);
         if (legacyResponse)
             return legacyResponse;
@@ -310,16 +347,34 @@ export async function handleChatbotResponse(sock, chatId, message, userMessage, 
             userMessage ||
             '';
         const cleanedMessage = originalMessage
-            .replace(new RegExp(`@${botNumber}`, 'g'), '')
+            .replace(botNumber ? new RegExp(`@${botNumber}\\b`, 'g') : /$^/, '')
             .trim();
         const image = content?.imageMessage;
         if (!cleanedMessage && !image)
             return;
         const memoryKey = `${chatId}:${senderId}`;
+        const now = Date.now();
+        for (const [key, touchedAt] of chatMemory.touchedAt.entries()) {
+            if (now - touchedAt > MEMORY_TTL_MS) {
+                chatMemory.messages.delete(key);
+                chatMemory.userInfo.delete(key);
+                chatMemory.touchedAt.delete(key);
+            }
+        }
+        if (chatMemory.touchedAt.size >= MAX_MEMORY_CHATS && !chatMemory.touchedAt.has(memoryKey)) {
+            const oldestKey = [...chatMemory.touchedAt.entries()]
+                .sort((a, b) => a[1] - b[1])[0]?.[0];
+            if (oldestKey) {
+                chatMemory.messages.delete(oldestKey);
+                chatMemory.userInfo.delete(oldestKey);
+                chatMemory.touchedAt.delete(oldestKey);
+            }
+        }
         if (!chatMemory.messages.has(memoryKey)) {
             chatMemory.messages.set(memoryKey, []);
             chatMemory.userInfo.set(memoryKey, {});
         }
+        chatMemory.touchedAt.set(memoryKey, now);
         const imagePrompt = image && !cleanedMessage ? 'Please look at this image and respond naturally.' : cleanedMessage;
         const userInfo = extractUserInfo(cleanedMessage);
         if (Object.keys(userInfo).length > 0) {
@@ -386,7 +441,7 @@ export default {
                 text: `*🤖 CHATBOT SETUP*\n\n` +
                     `*Status:* ${status.globalEnabled ? 'Enabled' : 'Disabled'}\n` +
                     `*Scope:* Direct messages and groups\n` +
-                    `*Providers:* ${[...status.availableProviders, 'legacy fallback'].join(', ')}\n\n` +
+                    `*Providers:* ${status.availableProviders.join(', ') || 'none'}\n\n` +
                     `*Commands:*\n` +
                     `• \`.chatbot on\` - Enable replies in this chat\n` +
                     `• \`.chatbot off\` - Disable replies in this chat\n\n` +

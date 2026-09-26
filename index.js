@@ -75,6 +75,90 @@ catch {
 }
 global.botname = config.botName || "jam-md";
 global.themeemoji = "•";
+let activeSocket = null;
+let reconnectTimer = null;
+let reconnectAttempt = 0;
+let startInFlight = false;
+let sessionRecoveryInFlight = false;
+const MAX_RECONNECT_DELAY_MS = 30000;
+
+function errorText(error) {
+    if (!error)
+        return '';
+    return [
+        error.message,
+        error.stack,
+        error.data?.message,
+        error.output?.payload?.message
+    ].filter(Boolean).join(' ');
+}
+
+function isCryptoSessionError(error) {
+    const text = errorText(error).toLowerCase();
+    return [
+        'verifymac',
+        'sessioncipher',
+        'bad mac',
+        'bad mac key',
+        'decryptwithsessions',
+        'failed to decrypt',
+        'libsignal',
+        'invalid pre-key',
+        'signal error'
+    ].some((marker) => text.includes(marker));
+}
+
+function closeActiveSocket() {
+    const socket = activeSocket;
+    activeSocket = null;
+    if (!socket)
+        return;
+    try {
+        socket.ws?.close();
+    }
+    catch (error) {
+        printLog('warning', `Could not close the stale WhatsApp socket: ${error.message}`);
+    }
+}
+
+function scheduleReconnect(reason = 'connection closed') {
+    if (reconnectTimer || startInFlight || sessionRecoveryInFlight)
+        return;
+    const waitMs = Math.min(
+        5000 * Math.max(1, 2 ** reconnectAttempt),
+        MAX_RECONNECT_DELAY_MS
+    );
+    reconnectAttempt += 1;
+    printLog('connection', `${reason}. Reconnecting in ${Math.ceil(waitMs / 1000)} seconds...`);
+    reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        startQasimDev().catch((error) => {
+            printLog('error', `Reconnect failed: ${error.message}`);
+            scheduleReconnect('reconnect attempt failed');
+        });
+    }, waitMs);
+}
+
+async function recoverCorruptedSession(reason) {
+    if (sessionRecoveryInFlight)
+        return;
+    sessionRecoveryInFlight = true;
+    try {
+        closeActiveSocket();
+        rmSync(SESSION_DIR, { recursive: true, force: true });
+        ensureSessionDirectory();
+        setPairingStatus('ready');
+        printLog('warning', `WhatsApp session reset after a decryption failure (${reason}). Re-pair the bot if needed.`);
+    }
+    catch (error) {
+        printLog('error', `Could not reset the WhatsApp session: ${error.message}`);
+    }
+    finally {
+        sessionRecoveryInFlight = false;
+    }
+    scheduleReconnect('session recovery completed');
+}
+
 const pairingCode = !process.argv.includes("--qr-code");
 const useMobile = process.argv.includes("--mobile");
 function ensureSessionDirectory() {
@@ -154,6 +238,9 @@ server.listen(PORT, () => {
     printLog('success', `Server listening on port ${PORT}`);
 });
 async function startQasimDev() {
+    if (startInFlight)
+        return activeSocket;
+    startInFlight = true;
     try {
         const { version } = await fetchLatestBaileysVersion();
         ensureSessionDirectory();
@@ -188,6 +275,7 @@ async function startQasimDev() {
             connectTimeoutMs: 60000,
             keepAliveIntervalMs: 10000,
         });
+        activeSocket = QasimDev;
         QasimDev.store = store;
         setPairingSocket(QasimDev);
         const originalSendPresenceUpdate = QasimDev.sendPresenceUpdate;
@@ -338,6 +426,7 @@ async function startQasimDev() {
                 }
             }
             if (connection === "open") {
+                reconnectAttempt = 0;
                 setPairingStatus('connected');
                 printLog('success', 'Bot connected successfully!');
                 try {
@@ -381,21 +470,20 @@ async function startQasimDev() {
                 clearPairingSocket(QasimDev);
                 setPairingStatus('reconnecting');
                 const statusCode = lastDisconnect?.error?.output?.statusCode;
-                const shouldReconnect = statusCode !== DisconnectReason.loggedOut && statusCode !== 401;
-                if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
-                    try {
-                        rmSync(SESSION_DIR, { recursive: true, force: true });
-                    }
-                    catch (_e) { /* ignore */ }
-                    await delay(3000);
-                    startQasimDev();
+                const disconnectError = lastDisconnect?.error;
+                activeSocket = null;
+                const shouldResetSession = isCryptoSessionError(disconnectError) ||
+                    statusCode === DisconnectReason.loggedOut ||
+                    statusCode === 401;
+                if (shouldResetSession) {
+                    await recoverCorruptedSession(
+                        isCryptoSessionError(disconnectError)
+                            ? 'Baileys reported a bad MAC/session cipher'
+                            : `WhatsApp disconnected with status ${statusCode}`
+                    );
                     return;
                 }
-                if (shouldReconnect) {
-                    printLog('connection', 'Reconnecting in 5 seconds...');
-                    await delay(5000);
-                    startQasimDev();
-                }
+                scheduleReconnect(`WhatsApp connection closed${statusCode ? ` (status ${statusCode})` : ''}`);
             }
         });
         QasimDev.ev.on('call', async (calls) => {
@@ -414,8 +502,11 @@ async function startQasimDev() {
     }
     catch (error) {
         printLog('error', `Error in startQasimDev: ${error.message}`);
-        await delay(5000);
-        startQasimDev();
+        startInFlight = false;
+        scheduleReconnect('WhatsApp startup failed');
+    }
+    finally {
+        startInFlight = false;
     }
 }
 async function main() {
@@ -491,12 +582,16 @@ process.on('uncaughtException', (err) => {
     });
 });
 process.on('unhandledRejection', (err) => {
-    printLog('error', `Unhandled Rejection: ${err.message}`);
-    console.error(err.stack);
+    if (isCryptoSessionError(err)) {
+        void recoverCorruptedSession('libsignal could not decrypt the stored session');
+    }
+    const message = errorText(err) || 'unknown error';
+    printLog('error', `Unhandled Rejection: ${message}`);
+    console.error(err?.stack || err);
     writeErrorLog({
         type: 'unhandledRejection',
-        error: err.message,
-        stack: err.stack,
+        error: message,
+        stack: err?.stack,
         timestamp: new Date().toISOString()
     });
 });

@@ -3,11 +3,18 @@ import fs from 'fs';
 import path from 'path';
 const acrcloud = createRequire(import.meta.url)('acrcloud');
 import { downloadContentFromMessage } from '@whiskeysockets/baileys';
-const acr = new acrcloud({
-    host: 'identify-eu-west-1.acrcloud.com',
-    access_key: 'c33c767d683f78bd17d4bd4991955d81',
-    access_secret: 'bvgaIAEtADBTbLwiPGYlxupWqkNGIjT7J9Ag2vIu',
-});
+import config from '../config.js';
+
+function getAcrClient() {
+    if (!config.acrcloud.accessKey || !config.acrcloud.accessSecret) {
+        throw new Error('ACRCLOUD_ACCESS_KEY and ACRCLOUD_ACCESS_SECRET are not configured');
+    }
+    return new acrcloud({
+        host: config.acrcloud.host,
+        access_key: config.acrcloud.accessKey,
+        access_secret: config.acrcloud.accessSecret
+    });
+}
 /* ================= MEDIA HELPERS ================= */
 function getAudioOrVideo(message) {
     const m = message.message || {};
@@ -51,7 +58,7 @@ export default {
                 fs.mkdirSync(tmpDir, { recursive: true });
             const tmpPath = path.join(tmpDir, `${Date.now()}${media.ext}`);
             fs.writeFileSync(tmpPath, buffer);
-            const res = await acr.identify(fs.readFileSync(tmpPath));
+            const res = await getAcrClient().identify(fs.readFileSync(tmpPath));
             fs.unlinkSync(tmpPath);
             const { code, msg } = res.status;
             if (code !== 0)

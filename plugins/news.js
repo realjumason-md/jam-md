@@ -1,4 +1,5 @@
 import axios from 'axios';
+import config from '../config.js';
 export default {
     command: 'news',
     aliases: ['headlines', 'latestnews'],
@@ -8,7 +9,13 @@ export default {
     async handler(sock, message, args, context) {
         const chatId = context.chatId || message.key.remoteJid;
         try {
-            const apiKey = 'dcd720a6f1914e2d9dba9790c188c08c';
+            const apiKey = config.newsApiKey;
+            if (!apiKey) {
+                return await sock.sendMessage(chatId, {
+                    text: '⚠️ News lookup is not configured on this bot yet.',
+                    quoted: message
+                });
+            }
             const response = await axios.get(`https://newsapi.org/v2/top-headlines?country=us&apiKey=${apiKey}`);
             if (!response.data || !response.data.articles)
                 throw new Error('Invalid API response');

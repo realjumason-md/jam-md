@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { channelInfo } from '../lib/messageConfig.js';
+import config from '../config.js';
 export default {
     command: 'weather',
     aliases: ['forecast', 'climate'],
@@ -16,7 +17,13 @@ export default {
             }, { quoted: message });
         }
         try {
-            const apiKey = '060a6bcfa19809c2cd4d97a212b19273';
+            const apiKey = config.weatherApiKey;
+            if (!apiKey) {
+                return await sock.sendMessage(chatId, {
+                    text: '⚠️ Weather lookup is not configured on this bot yet.',
+                    ...channelInfo
+                }, { quoted: message });
+            }
             const response = await axios.get(`https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(city)}&units=metric&appid=${apiKey}`);
             const weather = response.data;
             const weatherText = `ʜᴇʀᴇ ɪs ʏᴏᴜʀ ᴘʟᴀᴄᴇ ᴡᴇᴀᴛʜᴇʀ\n\n` +

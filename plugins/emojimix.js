@@ -1,6 +1,7 @@
 import fs from 'fs';
 import { exec } from 'child_process';
 import path from 'path';
+import config from '../config.js';
 export default {
     command: 'emojimix',
     aliases: ['mixemoji', 'emix'],
@@ -23,8 +24,14 @@ export default {
                 return;
             }
             const [emoji1, emoji2] = args[0].split('+').map((e) => e.trim());
+            if (!config.tenorApiKey) {
+                await sock.sendMessage(chatId, {
+                    text: '⚠️ Emoji mixing is not configured on this bot yet.'
+                }, { quoted: message });
+                return;
+            }
             const url = `https://tenor.googleapis.com/v2/featured?` +
-                `key=AIzaSyAyimkuYQYF_FXVALexPuGQctUWRURdCYQ` +
+                `key=${encodeURIComponent(config.tenorApiKey)}` +
                 `&contentfilter=high&media_filter=png_transparent` +
                 `&component=proactive&collection=emoji_kitchen_v5` +
                 `&q=${encodeURIComponent(emoji1)}_${encodeURIComponent(emoji2)}`;

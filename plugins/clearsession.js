@@ -1,4 +1,5 @@
 import fs from 'fs';
+import path from 'path';
 import isOwnerOrSudo from '../lib/isOwner.js';
 import { channelInfo } from '../lib/messageConfig.js';
 import { SESSION_DIR } from '../lib/paths.js';
