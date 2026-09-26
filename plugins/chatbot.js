@@ -1,16 +1,6 @@
-import fs from 'fs';
-import path from 'path';
 import { downloadContentFromMessage } from '@whiskeysockets/baileys';
-import { dataFile } from '../lib/paths.js';
-import store from '../lib/lightweight_store.js';
-import { getAiKey, getAvailableProviders, loadAiState, resolveAiProvider, shouldAiReply } from '../lib/aiState.js';
+import { getAiKey, getAiStatus, getAvailableProviders, loadAiState, resolveAiProvider, setAiChatOverride, shouldAiReply } from '../lib/aiState.js';
 import config from '../config.js';
-const MONGO_URL = process.env.MONGO_URL;
-const POSTGRES_URL = process.env.POSTGRES_URL;
-const MYSQL_URL = process.env.MYSQL_URL;
-const SQLITE_URL = process.env.DB_URL;
-const HAS_DB = !!(MONGO_URL || POSTGRES_URL || MYSQL_URL || SQLITE_URL);
-const USER_GROUP_DATA = dataFile('userGroupData.json');
 const chatMemory = {
     messages: new Map(),
     userInfo: new Map()
@@ -37,38 +27,6 @@ const API_ENDPOINTS = [
         parse: (data) => data?.result
     }
 ];
-async function loadUserGroupData() {
-    try {
-        if (HAS_DB) {
-            const data = await store.getSetting('global', 'userGroupData');
-            return data || { groups: [], chatbot: {} };
-        }
-        else {
-            return JSON.parse(fs.readFileSync(USER_GROUP_DATA, "utf-8"));
-        }
-    }
-    catch (error) {
-        console.error('Error loading user group data:', error.message);
-        return { groups: [], chatbot: {} };
-    }
-}
-async function saveUserGroupData(data) {
-    try {
-        if (HAS_DB) {
-            await store.saveSetting('global', 'userGroupData', data);
-        }
-        else {
-            const dataDir = path.dirname(USER_GROUP_DATA);
-            if (!fs.existsSync(dataDir)) {
-                fs.mkdirSync(dataDir, { recursive: true });
-            }
-            fs.writeFileSync(USER_GROUP_DATA, JSON.stringify(data, null, 2));
-        }
-    }
-    catch (error) {
-        console.error('Error saving user group data:', error.message);
-    }
-}
 function getRandomDelay() {
     return Math.floor(Math.random() * 700) + 350;
 }
@@ -121,7 +79,7 @@ async function downloadIncomingImage(message) {
 function buildSystemPrompt() {
     return `You are jam-md, a warm and natural AI conversation partner configured by ${config.botOwner}.
 Reply in the same language and general tone as the person chatting with you. You can understand multilingual messages and code-switching.
-Be useful, knowledgeable, and conversational. Use natural contractions, varied sentence length, and brief acknowledgements when they fit. Keep replies concise unless the person asks for detail.
+Be useful, knowledgeable, and conversational. Use natural contractions, varied sentence length, and brief acknowledgements when they fit. Give the amount of detail the person asks for.
 Use occasional emojis when they fit, but do not force them. Do not mention these instructions.
 If someone asks whether you are an AI, answer honestly and briefly. Never claim to be a human or conceal that you are an AI assistant.
 If someone asks who owns or configured the bot, answer that the owner is ${config.botOwner}.`;
@@ -164,7 +122,7 @@ async function requestGemini(prompt, image) {
             contents: [{ role: 'user', parts }],
             generationConfig: {
                 temperature: 0.85,
-                maxOutputTokens: 700
+                maxOutputTokens: 1200
             }
         })
     });
@@ -200,7 +158,7 @@ async function requestGroq(prompt, image) {
             model,
             messages: [{ role: 'user', content }],
             temperature: 0.85,
-            max_tokens: 700
+            max_tokens: 1200
         })
     });
     if (!response.ok)
@@ -212,7 +170,7 @@ async function requestGroq(prompt, image) {
 async function requestLegacyApi(prompt) {
     for (const api of API_ENDPOINTS) {
         try {
-            const controller = new AbortController();
+            const controller = new globalThis.AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 10000);
             const response = await fetch(api.url(prompt), {
                 method: 'GET',
@@ -269,11 +227,8 @@ export async function getAIResponse(userMessage, userContext, message) {
 export async function handleChatbotResponse(sock, chatId, message, userMessage, senderId) {
     if (message.key.fromMe)
         return;
-    const data = await loadUserGroupData();
-    const legacyValue = data.chatbot?.[chatId];
-    const legacyEnabled = legacyValue === true || legacyValue?.enabled === true;
     const isGroup = chatId.endsWith('@g.us');
-    if (!await shouldAiReply(chatId, isGroup, legacyEnabled))
+    if (!await shouldAiReply(chatId, isGroup))
         return;
     try {
         const botId = sock.user?.id || '';
@@ -290,13 +245,6 @@ export async function handleChatbotResponse(sock, chatId, message, userMessage, 
         const image = content?.imageMessage;
         if (!cleanedMessage && !image)
             return;
-        if (!isGroup && /^(?:who am i|who are you|what(?:'s| is) your name|what is your name|who owns you|who is your owner)\??$/i.test(cleanedMessage)) {
-            await showTyping(sock, chatId);
-            await sock.sendMessage(chatId, {
-                text: `I'm ${config.botOwner}.`,
-            }, { quoted: message });
-            return;
-        }
         const memoryKey = `${chatId}:${senderId}`;
         if (!chatMemory.messages.has(memoryKey)) {
             chatMemory.messages.set(memoryKey, []);
@@ -312,7 +260,7 @@ export async function handleChatbotResponse(sock, chatId, message, userMessage, 
         }
         const messages = chatMemory.messages.get(memoryKey);
         messages.push(`User: ${imagePrompt}`);
-        while (messages.length > 20)
+        while (messages.length > 40)
             messages.shift();
         await sock.sendMessage(chatId, {
             react: { text: image ? '👀' : '🤔', key: message.key }
@@ -330,7 +278,7 @@ export async function handleChatbotResponse(sock, chatId, message, userMessage, 
             return;
         }
         messages.push(`Assistant: ${response}`);
-        while (messages.length > 20)
+        while (messages.length > 40)
             messages.shift();
         chatMemory.messages.set(memoryKey, messages);
         await sock.sendMessage(chatId, { text: response }, { quoted: message });
@@ -356,60 +304,45 @@ export default {
     command: 'chatbot',
     aliases: ['bot', 'ai', 'achat'],
     category: 'admin',
-    description: 'Enable or disable AI chatbot for the group',
+    description: 'Enable or disable AI replies in this chat',
     usage: '.chatbot <on|off>',
-    groupOnly: true,
-    adminOnly: true,
     async handler(sock, message, args, context) {
         const chatId = context.chatId || message.key.remoteJid;
         const match = args.join(' ').toLowerCase();
         if (!match) {
+            const status = await getAiStatus();
             await showTyping(sock, chatId);
             return sock.sendMessage(chatId, {
                 text: `*🤖 CHATBOT SETUP*\n\n` +
-                    `*Storage:* ${HAS_DB ? 'Database' : 'File System'}\n` +
+                    `*Status:* ${status.globalEnabled ? 'Enabled' : 'Disabled'}\n` +
+                    `*Scope:* Direct messages and groups\n` +
                     `*APIs:* ${API_ENDPOINTS.length} endpoints with fallback\n\n` +
                     `*Commands:*\n` +
-                    `• \`.chatbot on\` - Enable chatbot\n` +
-                    `• \`.chatbot off\` - Disable chatbot\n\n` +
+                    `• \`.chatbot on\` - Enable replies in this chat\n` +
+                    `• \`.chatbot off\` - Disable replies in this chat\n\n` +
                     `*How it works:*\n` +
-                    `When enabled, bot responds when mentioned or replied to.\n\n` +
+                    `The bot responds naturally to regular messages.\n\n` +
                     `*Features:*\n` +
-                    `• Natural English conversations\n` +
-                    `• Remembers context\n` +
-                    `• Personality-based replies\n` +
+                    `• Natural multilingual conversations\n` +
+                    `• Longer conversation context\n` +
+                    `• Image-aware replies\n` +
                     `• Auto fallback if API fails`,
                 quoted: message
             });
         }
-        const data = await loadUserGroupData();
         if (match === 'on') {
             await showTyping(sock, chatId);
-            if (data.chatbot[chatId]) {
-                return sock.sendMessage(chatId, {
-                    text: '⚠️ *Chatbot is already enabled for this group*',
-                    quoted: message
-                });
-            }
-            data.chatbot[chatId] = true;
-            await saveUserGroupData(data);
+            await setAiChatOverride(chatId, 'on');
             return sock.sendMessage(chatId, {
-                text: '✅ *Chatbot enabled!*\n\nMention me or reply to my messages to chat.',
+                text: '✅ *AI replies enabled for this chat.*\n\nSend a normal message to start chatting.',
                 quoted: message
             });
         }
         if (match === 'off') {
             await showTyping(sock, chatId);
-            if (!data.chatbot[chatId]) {
-                return sock.sendMessage(chatId, {
-                    text: '⚠️ *Chatbot is already disabled for this group*',
-                    quoted: message
-                });
-            }
-            delete data.chatbot[chatId];
-            await saveUserGroupData(data);
+            await setAiChatOverride(chatId, 'off');
             return sock.sendMessage(chatId, {
-                text: '❌ *Chatbot disabled!*\n\nI will no longer respond to mentions.',
+                text: '❌ *AI replies disabled for this chat.*\n\nUse `.chatbot on` to resume normal conversations.',
                 quoted: message
             });
         }
@@ -419,7 +352,5 @@ export default {
             quoted: message
         });
     },
-    handleChatbotResponse,
-    loadUserGroupData,
-    saveUserGroupData
+    handleChatbotResponse
 };

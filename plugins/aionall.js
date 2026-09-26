@@ -3,7 +3,7 @@ import { setAiGlobalEnabled, getAiStatus } from '../lib/aiState.js';
 export default {
     command: 'aionall',
     category: 'ai',
-    description: 'Enable AI replies for all direct-message chats',
+    description: 'Enable AI replies for all chats',
     usage: '.aionall',
     ownerOnly: true,
     async handler(sock, message, _args, context) {
@@ -11,7 +11,7 @@ export default {
         await setAiGlobalEnabled(true);
         const status = await getAiStatus();
         return sock.sendMessage(chatId, {
-            text: `✅ *Global AI replies enabled for direct messages.*\n\nProvider: *${status.provider}*\nAvailable: *${status.availableProviders.join(', ') || 'none'}*\n\nUse \`.aioff\` in a chat to keep that chat disabled.`
+            text: `✅ *Global AI replies enabled for all chats.*\n\nProvider: *${status.provider}*\nAvailable: *${status.availableProviders.join(', ') || 'none'}*\n\nUse \`.aioff\` in a chat to keep that chat disabled.`
         }, { quoted: message });
     }
 };
