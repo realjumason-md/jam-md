@@ -81,6 +81,7 @@ let reconnectAttempt = 0;
 let startInFlight = false;
 let sessionRecoveryInFlight = false;
 const MAX_RECONNECT_DELAY_MS = 30000;
+const SESSION_RESET_MARKER = path.join(SESSION_DIR, '.reset-required');
 
 function errorText(error) {
     if (!error)
@@ -147,6 +148,10 @@ async function recoverCorruptedSession(reason) {
         closeActiveSocket();
         rmSync(SESSION_DIR, { recursive: true, force: true });
         ensureSessionDirectory();
+        fs.writeFileSync(SESSION_RESET_MARKER, JSON.stringify({
+            reason,
+            resetAt: new Date().toISOString()
+        }));
         setPairingStatus('ready');
         printLog('warning', `WhatsApp session reset after a decryption failure (${reason}). Re-pair the bot if needed.`);
     }
@@ -206,6 +211,10 @@ function hasValidSession() {
 }
 async function initializeSession() {
     ensureSessionDirectory();
+    if (existsSync(SESSION_RESET_MARKER)) {
+        printLog('warning', 'A previous WhatsApp session failed authentication. Waiting for a fresh pairing instead of restoring SESSION_ID.');
+        return false;
+    }
     const txt = config.sessionId;
     if (!txt) {
         if (hasValidSession()) {
@@ -428,6 +437,13 @@ async function startQasimDev() {
             if (connection === "open") {
                 reconnectAttempt = 0;
                 setPairingStatus('connected');
+                try {
+                    if (existsSync(SESSION_RESET_MARKER))
+                        fs.rmSync(SESSION_RESET_MARKER, { force: true });
+                }
+                catch (error) {
+                    printLog('warning', `Could not clear the session reset marker: ${error.message}`);
+                }
                 printLog('success', 'Bot connected successfully!');
                 try {
                     const setbioModule = await import('./plugins/setbio.js');
@@ -512,6 +528,7 @@ async function startQasimDev() {
 async function main() {
     await compileAll();
     await commandHandler.loadCommands();
+    await commandHandler.loadCommandState();
     printLog('info', 'Starting jam-md BOT...');
     await initializeSession();
     await delay(3000);

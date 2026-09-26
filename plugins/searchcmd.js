@@ -42,7 +42,7 @@ export default {
             }
             let resultText = `🔍 *SEARCH RESULTS FOR:* "${query.toUpperCase()}"\n\n`;
             results.forEach((res, index) => {
-                const status = CommandHandler.disabledCommands.has(res.command.toLowerCase()) ? '🔸' : '🔹';
+                const status = CommandHandler.isCommandEnabled(res.command) ? '🔹' : '🔸';
                 resultText += `${index + 1}. ${status} *.${res.command}*\n`;
                 resultText += `📝 _${res.description || 'No description available.'}_\n`;
                 if (res.aliases && res.aliases.length > 0) {

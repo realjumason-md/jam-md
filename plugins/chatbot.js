@@ -456,6 +456,13 @@ export default {
             });
         }
         if (match === 'on') {
+            const status = await getAiStatus();
+            if (!status.availableProviders.length) {
+                return sock.sendMessage(chatId, {
+                    text: '❌ AI was not enabled because no provider is configured.\n\nSet GEMINI_API_KEY, GROQ_API_KEY, or XAI_API_KEY in the deployment environment, then run `.chatbot on` again.',
+                    quoted: message
+                });
+            }
             await showTyping(sock, chatId);
             await setAiChatOverride(chatId, 'on');
             return sock.sendMessage(chatId, {

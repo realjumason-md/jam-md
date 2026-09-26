@@ -90,7 +90,7 @@ export default {
                 catCmds.forEach((cmdName, index) => {
                     const isLast = index === catCmds.length - 1;
                     const prefix = isLast ? '└' : '├';
-                    const isOff = CommandHandler.disabledCommands.has(cmdName.toLowerCase());
+                    const isOff = !CommandHandler.isCommandEnabled(cmdName);
                     const cmdStats = stats.find(s => s.command === cmdName.toLowerCase());
                     const statusIcon = isOff ? disabledEmoji : activeEmoji;
                     let speedTag = '';

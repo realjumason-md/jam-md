@@ -18,6 +18,18 @@ export default {
                 const state = CommandHandler.toggleCommand(targetCmd);
                 return await sock.sendMessage(chatId, { text: `✅ Command *${targetCmd}* has been *${state}*.` }, { quoted: message });
             }
+            if (action === 'all') {
+                const requested = args[1]?.toLowerCase();
+                if (!['on', 'off'].includes(requested)) {
+                    return await sock.sendMessage(chatId, {
+                        text: '❌ Usage: `.manage all on` or `.manage all off`'
+                    }, { quoted: message });
+                }
+                const state = CommandHandler.setAllCommandsEnabled(requested === 'on');
+                return await sock.sendMessage(chatId, {
+                    text: `✅ All commands are now *${state}*.\n\nControl commands remain available so you can enable or disable individual commands.`
+                }, { quoted: message });
+            }
             if (action === 'alias') {
                 const newAlias = args[2]?.toLowerCase();
                 if (!targetCmd || !newAlias) {
@@ -31,6 +43,7 @@ export default {
             }
             const helpText = `🛠️ *COMMAND MANAGER*\n\n` +
                 `*⁠• Toggle:* .manage toggle [name]\n` +
+                `*• All commands:* .manage all [on|off]\n` +
                 `*• Alias:* .manage alias [name] [new_alias]\n` +
                 `*• Reload:* Run your reload command to reset changes.`;
             await sock.sendMessage(chatId, { text: helpText }, { quoted: message });
