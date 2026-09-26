@@ -94,10 +94,16 @@ function extractUserInfo(message) {
     }
     return info;
 }
-async function downloadIncomingImage(message) {
-    const content = message.message?.ephemeralMessage?.message ||
+
+function getMessageContent(message) {
+    return message.message?.ephemeralMessage?.message ||
         message.message?.viewOnceMessage?.message ||
+        message.message?.viewOnceMessageV2?.message ||
         message.message;
+}
+
+async function downloadIncomingImage(message) {
+    const content = getMessageContent(message);
     const image = content?.imageMessage;
     if (!image)
         return null;
@@ -270,16 +276,16 @@ export async function handleChatbotResponse(sock, chatId, message, userMessage, 
     try {
         const botId = sock.user?.id || '';
         const botNumber = botId.split(':')[0];
-        const originalMessage = message.message?.conversation ||
-            message.message?.extendedTextMessage?.text ||
-            message.message?.imageMessage?.caption ||
-            message.message?.ephemeralMessage?.message?.conversation ||
+        const content = getMessageContent(message);
+        const originalMessage = content?.conversation ||
+            content?.extendedTextMessage?.text ||
+            content?.imageMessage?.caption ||
             userMessage ||
             '';
         const cleanedMessage = originalMessage
             .replace(new RegExp(`@${botNumber}`, 'g'), '')
             .trim();
-        const image = message.message?.imageMessage || message.message?.ephemeralMessage?.message?.imageMessage;
+        const image = content?.imageMessage;
         if (!cleanedMessage && !image)
             return;
         const memoryKey = `${chatId}:${senderId}`;
