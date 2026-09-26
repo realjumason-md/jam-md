@@ -139,7 +139,7 @@ Open your deployed jam-md web page, leave `SESSION_ID` empty, and use the pairin
 3. An 8-character code appears (e.g. `J38K-4PNS`)
 4. On your phone: **WhatsApp → ⋮ Menu → Linked Devices → Link a Device → Link with phone number**
 5. Enter the code — session is created
-6. Keep the deployment running so the saved session can reconnect automatically
+6. The code is copied to your clipboard when possible; paste it into WhatsApp and keep the deployment running so the saved session can reconnect automatically
 
 ### Step 3 — Optional persistent session
 

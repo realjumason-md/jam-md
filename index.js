@@ -17,7 +17,7 @@ import pino from 'pino';
 import config from './config.js';
 import store from './lib/lightweight_store.js';
 import SaveCreds from './lib/session.js';
-import { server, PORT, setPairingSocket, setPairingStatus } from './lib/server.js';
+import { server, PORT, clearPairingSocket, setPairingSocket, setPairingStatus } from './lib/server.js';
 import { printLog } from './lib/print.js';
 import { writeErrorLog } from './lib/logger.js';
 import { handleMessages, handleGroupParticipantUpdate, handleStatus, handleCall } from './lib/messageHandler.js';
@@ -177,6 +177,7 @@ async function startQasimDev() {
             markOnlineOnConnect: !isGhostActive,
             generateHighQualityLinkPreview: true,
             syncFullHistory: false,
+            shouldSyncHistoryMessage: () => false,
             getMessage: async (key) => {
                 const jid = jidNormalizedUser(key.remoteJid);
                 const msg = await store.loadMessage(jid, key.id);
@@ -233,6 +234,9 @@ async function startQasimDev() {
         store.bind(QasimDev.ev);
         QasimDev.ev.on('messages.upsert', async (chatUpdate) => {
             try {
+                if (chatUpdate?.requestId) {
+                    return;
+                }
                 const mek = chatUpdate.messages[0];
                 if (!mek.message)
                     return;
@@ -374,6 +378,7 @@ async function startQasimDev() {
                 console.log();
             }
             if (connection === 'close') {
+                clearPairingSocket(QasimDev);
                 setPairingStatus('reconnecting');
                 const statusCode = lastDisconnect?.error?.output?.statusCode;
                 const shouldReconnect = statusCode !== DisconnectReason.loggedOut && statusCode !== 401;
