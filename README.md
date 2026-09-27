@@ -574,6 +574,7 @@ DB_URL=./data/baileys.db
 | `SESSION_PATH` | ❌ | `./session` | Local or mounted multi-file auth directory |
 | `SESSION_STORE` | ❌ | `auto` | `auto`, `mongo`, `postgres`, `mysql`, `local`, or `none` |
 | `SESSION_STORE_KEY` | ❌ | `jam-md:whatsapp` | Unique key for this bot's saved auth state |
+| `UPDATE_URL` | ❌ | GitHub main ZIP | ZIP source used by the owner-only update command |
 | `OWNER_NUMBER` | ✅ | `923051391007` | Your number, no `+` |
 | `BOT_NAME` | ❌ | `jam-md` | Bot display name |
 | `BOT_OWNER` | ❌ | `Jaiton` | Owner display name |

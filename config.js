@@ -2,6 +2,7 @@ import 'dotenv/config';
 const _prefixes = process.env.PREFIXES
     ? process.env.PREFIXES.split(',').map((prefix) => prefix.trim()).filter(Boolean)
     : ['.', '!', '/', '#'];
+const updateZipUrl = process.env.UPDATE_URL?.trim() || 'https://github.com/realjumason-md/jam-md/archive/refs/heads/main.zip';
 const config = {
     // Bot Identity
     botName: process.env.BOT_NAME || 'jam-md',
@@ -18,7 +19,7 @@ const config = {
     timeZone: process.env.TIMEZONE || 'Asia/Karachi',
     // Links
     channelLink: process.env.CHANNEL_LINK || '',
-    updateZipUrl: process.env.UPDATE_URL || 'https://github.com/realjumason-md/jam-md/archive/refs/heads/main.zip',
+    updateZipUrl: /^https?:\/\//i.test(updateZipUrl) ? updateZipUrl : `https://${updateZipUrl}`,
     ytChannel: process.env.YT_CHANNEL || 'jam-md',
     // Session
     sessionId: process.env.SESSION_ID || '',
