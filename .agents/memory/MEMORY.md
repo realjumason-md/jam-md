@@ -1,0 +1,1 @@
+- [WhatsApp session persistence](whatsapp-session-persistence.md) — Baileys links require the complete multi-file auth state, not just creds.json.

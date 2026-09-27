@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import https from 'https';
 import { SESSION_DIR } from '../lib/paths.js';
+import { flushSessionPersistence } from '../lib/session-store.js';
 function run(cmd) {
     return new Promise((resolve, reject) => {
         exec(cmd, { windowsHide: true }, (err, stdout, stderr) => {
@@ -244,6 +245,9 @@ export default {
                 text: '🔄 Updating the bot, please wait…',
                 ...channelInfo
             }, { quoted: message });
+            // Finish writing the full multi-file auth state before replacing code
+            // or restarting, so an update can never race the session backup.
+            await flushSessionPersistence();
             let changesSummary = '';
             if (await hasGitRepo()) {
                 const { oldRev, newRev, alreadyUpToDate, commits, files } = await updateViaGit();

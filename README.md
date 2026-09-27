@@ -147,9 +147,21 @@ Open your deployed jam-md web page, leave `SESSION_ID` empty, and use the pairin
 SESSION_ID=your_session_id_here
 # Optional: use a persistent mounted volume for the session files
 SESSION_PATH=./session
+# Recommended for cloud redeploys: mirror the full auth state to your database
+SESSION_STORE=auto
+SESSION_STORE_KEY=jam-md:whatsapp
 ```
 
 You can omit `SESSION_ID` when using the web pairing form. The pairing code is shown in the web page, not printed in deployment logs. Enter your full number with country code, copy the displayed code, and paste it into WhatsApp.
+
+> [!IMPORTANT]
+> `SESSION_ID` restores only the initial credentials file. WhatsApp also needs the
+> multi-file encryption keys created after pairing. To keep the link across a
+> fresh cloud deployment, configure one of the supported database URLs
+> (`MONGO_URL`, `POSTGRES_URL`/`DATABASE_URL`, or `MYSQL_URL`) and leave
+> `SESSION_STORE=auto`. The bot mirrors and restores the complete auth state
+> automatically. Use a different `SESSION_STORE_KEY` for each bot in the same
+> database.
 
 ---
 
@@ -354,6 +366,12 @@ npm start
 
 `replit.nix` automatically installs: Node.js 20, ffmpeg, imagemagick, libwebp, SQLite, pm2 etc.
 
+> [!IMPORTANT]
+> Replit redeploys can replace the local filesystem. Set `MONGO_URL`,
+> `POSTGRES_URL`, or `DATABASE_URL` to a persistent database and keep
+> `SESSION_STORE=auto`. After the first successful pairing, the complete
+> WhatsApp auth state is saved there and restored on future redeploys.
+
 > [!TIP]
 > Free Replit instances sleep after inactivity. Use [UptimeRobot](https://uptimerobot.com) to ping your Replit URL every 5 minutes to keep it alive.
 > [!NOTE]
@@ -552,7 +570,10 @@ DB_URL=./data/baileys.db
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `SESSION_ID` | ❌ | — | Optional saved WhatsApp session credentials |
+| `SESSION_ID` | ❌ | — | Optional initial WhatsApp credentials source |
+| `SESSION_PATH` | ❌ | `./session` | Local or mounted multi-file auth directory |
+| `SESSION_STORE` | ❌ | `auto` | `auto`, `mongo`, `postgres`, `mysql`, `local`, or `none` |
+| `SESSION_STORE_KEY` | ❌ | `jam-md:whatsapp` | Unique key for this bot's saved auth state |
 | `OWNER_NUMBER` | ✅ | `923051391007` | Your number, no `+` |
 | `BOT_NAME` | ❌ | `jam-md` | Bot display name |
 | `BOT_OWNER` | ❌ | `Jaiton` | Owner display name |
@@ -669,7 +690,18 @@ Send any message to the bot — WhatsApp re-syncs keys automatically. They are n
 ### Data lost after restart
 
 > [!CAUTION]
-> Cloud platforms reset the filesystem on redeploy. Set `SESSION_PATH` to a persistent mounted volume, or set `SESSION_ID` so the session can be restored after a fresh deployment. Add `MONGO_URL` to use MongoDB for bot data — [MongoDB Atlas](https://cloud.mongodb.com) has a free tier.
+> Cloud platforms reset the filesystem on redeploy. Set `SESSION_PATH` to a
+> persistent mounted volume, or configure `MONGO_URL`,
+> `POSTGRES_URL`/`DATABASE_URL`, or `MYSQL_URL` with `SESSION_STORE=auto`.
+> The bot then saves the complete multi-file WhatsApp auth state, not only
+> `creds.json`. A normal update and restart will not erase the saved session.
+
+### Temporary crypto errors after an update
+
+The bot now keeps the auth files and reconnects when Baileys reports a temporary
+crypto or bad-MAC error. It clears the saved session only when WhatsApp returns a
+real logged-out/401 status. This prevents a transient reconnect from forcing a
+new pairing code.
 
 ### Port conflict
 

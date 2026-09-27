@@ -22,6 +22,15 @@ import { printLog } from './lib/print.js';
 import { writeErrorLog } from './lib/logger.js';
 import { handleMessages, handleGroupParticipantUpdate, handleStatus, handleCall } from './lib/messageHandler.js';
 import { SESSION_DIR } from './lib/paths.js';
+import {
+    clearPersistentSession,
+    closeSessionPersistence,
+    flushSessionPersistence,
+    initializeSessionPersistence,
+    scheduleSessionSync,
+    startSessionPersistence,
+    stopSessionPersistence
+} from './lib/session-store.js';
 import commandHandler from './lib/commandHandler.js';
 store.readFromFile();
 setInterval(() => store.writeToFile(), config.storeWriteInterval || 10000);
@@ -145,15 +154,17 @@ async function recoverCorruptedSession(reason) {
         return;
     sessionRecoveryInFlight = true;
     try {
+        await stopSessionPersistence();
         closeActiveSocket();
         rmSync(SESSION_DIR, { recursive: true, force: true });
         ensureSessionDirectory();
+        await clearPersistentSession();
         fs.writeFileSync(SESSION_RESET_MARKER, JSON.stringify({
             reason,
             resetAt: new Date().toISOString()
         }));
         setPairingStatus('ready');
-        printLog('warning', `WhatsApp session reset after a decryption failure (${reason}). Re-pair the bot if needed.`);
+        printLog('warning', `WhatsApp logged out and the saved session was cleared (${reason}). Pair the bot again when ready.`);
     }
     catch (error) {
         printLog('error', `Could not reset the WhatsApp session: ${error.message}`);
@@ -211,20 +222,25 @@ function hasValidSession() {
 }
 async function initializeSession() {
     ensureSessionDirectory();
-    if (existsSync(SESSION_RESET_MARKER)) {
-        printLog('warning', 'A previous WhatsApp session failed authentication. Waiting for a fresh pairing instead of restoring SESSION_ID.');
-        return false;
-    }
+    await initializeSessionPersistence();
     const txt = config.sessionId;
     if (!txt) {
         if (hasValidSession()) {
+            if (existsSync(SESSION_RESET_MARKER))
+                fs.rmSync(SESSION_RESET_MARKER, { force: true });
             printLog('success', 'Existing session found. Using saved credentials');
             return true;
         }
+        if (existsSync(SESSION_RESET_MARKER)) {
+            printLog('warning', 'The previous WhatsApp session was logged out. Waiting for a fresh pairing.');
+        }
         return false;
     }
-    if (hasValidSession())
+    if (hasValidSession()) {
+        if (existsSync(SESSION_RESET_MARKER))
+            fs.rmSync(SESSION_RESET_MARKER, { force: true });
         return true;
+    }
     try {
         await SaveCreds(txt);
         await delay(2000);
@@ -258,7 +274,9 @@ async function startQasimDev() {
         const _saveCreds = async () => {
             ensureSessionDirectory();
             await saveCreds();
+            scheduleSessionSync();
         };
+        await startSessionPersistence();
         const msgRetryCounterCache = new NodeCache();
         const ghostMode = await store.getSetting('global', 'stealthMode');
         const isGhostActive = ghostMode && ghostMode.enabled;
@@ -488,16 +506,16 @@ async function startQasimDev() {
                 const statusCode = lastDisconnect?.error?.output?.statusCode;
                 const disconnectError = lastDisconnect?.error;
                 activeSocket = null;
-                const shouldResetSession = isCryptoSessionError(disconnectError) ||
-                    statusCode === DisconnectReason.loggedOut ||
+                const shouldResetSession = statusCode === DisconnectReason.loggedOut ||
                     statusCode === 401;
                 if (shouldResetSession) {
                     await recoverCorruptedSession(
-                        isCryptoSessionError(disconnectError)
-                            ? 'Baileys reported a bad MAC/session cipher'
-                            : `WhatsApp disconnected with status ${statusCode}`
+                        `WhatsApp disconnected with status ${statusCode}`
                     );
                     return;
+                }
+                if (isCryptoSessionError(disconnectError)) {
+                    printLog('warning', 'WhatsApp reported a temporary session/crypto error. Keeping the saved auth state and reconnecting.');
                 }
                 scheduleReconnect(`WhatsApp connection closed${statusCode ? ` (status ${statusCode})` : ''}`);
             }
@@ -599,9 +617,6 @@ process.on('uncaughtException', (err) => {
     });
 });
 process.on('unhandledRejection', (err) => {
-    if (isCryptoSessionError(err)) {
-        void recoverCorruptedSession('libsignal could not decrypt the stored session');
-    }
     const message = errorText(err) || 'unknown error';
     printLog('error', `Unhandled Rejection: ${message}`);
     console.error(err?.stack || err);
@@ -611,6 +626,16 @@ process.on('unhandledRejection', (err) => {
         stack: err?.stack,
         timestamp: new Date().toISOString()
     });
+});
+process.on('SIGTERM', async () => {
+    await flushSessionPersistence();
+    await closeSessionPersistence();
+    process.exit(0);
+});
+process.on('SIGINT', async () => {
+    await flushSessionPersistence();
+    await closeSessionPersistence();
+    process.exit(0);
 });
 server.on('error', (error) => {
     if (error.code === 'EADDRINUSE') {
