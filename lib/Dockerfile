@@ -8,7 +8,7 @@ RUN apt-get update \
 
 COPY package.json package-lock.json ./
 
-RUN npm install
+RUN npm ci --omit=dev --no-audit --no-fund
 
 COPY . .
 
