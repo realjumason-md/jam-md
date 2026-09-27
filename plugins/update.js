@@ -5,6 +5,7 @@ import { exec } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import https from 'https';
+import { inflateRawSync } from 'zlib';
 import { SESSION_DIR } from '../lib/paths.js';
 import { flushSessionPersistence } from '../lib/session-store.js';
 function run(cmd) {
@@ -43,6 +44,8 @@ async function updateViaGit() {
 function downloadFile(url, dest, visited = new Set()) {
     return new Promise((resolve, reject) => {
         try {
+            if (!/^https?:\/\//i.test(url))
+                url = `https://${url}`;
             if (visited.has(url) || visited.size > 5) {
                 return reject(new Error('Too many redirects'));
             }
@@ -87,31 +90,94 @@ function downloadFile(url, dest, visited = new Set()) {
         }
     });
 }
-async function extractZip(zipPath, outDir) {
-    if (process.platform === 'win32') {
-        const cmd = `powershell -NoProfile -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${outDir.replace(/\\/g, '/')}' -Force"`;
-        await run(cmd);
-        return;
+function isSafeArchivePath(root, entryName) {
+    const normalizedName = entryName.replace(/\\/g, '/');
+    const destination = path.resolve(root, normalizedName);
+    const relativeDestination = path.relative(root, destination);
+    return relativeDestination &&
+        !relativeDestination.startsWith('..') &&
+        !path.isAbsolute(relativeDestination);
+}
+function readUInt16(buffer, offset) {
+    return buffer.readUInt16LE(offset);
+}
+function readUInt32(buffer, offset) {
+    return buffer.readUInt32LE(offset);
+}
+export function extractZip(zipPath, outDir) {
+    const archive = fs.readFileSync(zipPath);
+    const minimumEndRecordSize = 22;
+    const maximumCommentLength = 0xffff;
+    const searchStart = Math.max(0, archive.length - minimumEndRecordSize - maximumCommentLength);
+    let endRecordOffset = -1;
+    for (let offset = archive.length - minimumEndRecordSize; offset >= searchStart; offset -= 1) {
+        if (readUInt32(archive, offset) === 0x06054b50) {
+            endRecordOffset = offset;
+            break;
+        }
     }
-    try {
-        await run('command -v unzip');
-        await run(`unzip -o '${zipPath}' -d '${outDir}'`);
-        return;
+    if (endRecordOffset < 0)
+        throw new Error('Downloaded file is not a supported ZIP archive');
+
+    const entryCount = readUInt16(archive, endRecordOffset + 10);
+    const centralDirectorySize = readUInt32(archive, endRecordOffset + 12);
+    const centralDirectoryOffset = readUInt32(archive, endRecordOffset + 16);
+    if (entryCount === 0xffff || centralDirectorySize === 0xffffffff || centralDirectoryOffset === 0xffffffff) {
+        throw new Error('ZIP64 archives are not supported by the built-in updater');
     }
-    catch { }
-    try {
-        await run('command -v 7z');
-        await run(`7z x -y '${zipPath}' -o'${outDir}'`);
-        return;
+    if (centralDirectoryOffset + centralDirectorySize > archive.length) {
+        throw new Error('ZIP central directory is outside the downloaded file');
     }
-    catch { }
-    try {
-        await run('busybox unzip -h');
-        await run(`busybox unzip -o '${zipPath}' -d '${outDir}'`);
-        return;
+
+    fs.mkdirSync(outDir, { recursive: true });
+    let cursor = centralDirectoryOffset;
+    for (let index = 0; index < entryCount; index += 1) {
+        if (readUInt32(archive, cursor) !== 0x02014b50)
+            throw new Error('ZIP central directory is invalid');
+        const flags = readUInt16(archive, cursor + 8);
+        const compressionMethod = readUInt16(archive, cursor + 10);
+        const compressedSize = readUInt32(archive, cursor + 20);
+        const uncompressedSize = readUInt32(archive, cursor + 24);
+        const nameLength = readUInt16(archive, cursor + 28);
+        const extraLength = readUInt16(archive, cursor + 30);
+        const commentLength = readUInt16(archive, cursor + 32);
+        const localHeaderOffset = readUInt32(archive, cursor + 42);
+        const entryName = archive
+            .subarray(cursor + 46, cursor + 46 + nameLength)
+            .toString((flags & 0x800) !== 0 ? 'utf8' : 'utf8');
+        cursor += 46 + nameLength + extraLength + commentLength;
+
+        if (!isSafeArchivePath(outDir, entryName))
+            throw new Error(`ZIP archive contains an unsafe path: ${entryName}`);
+        if (localHeaderOffset + 30 > archive.length ||
+            readUInt32(archive, localHeaderOffset) !== 0x04034b50) {
+            throw new Error(`ZIP entry has an invalid local header: ${entryName}`);
+        }
+        const localNameLength = readUInt16(archive, localHeaderOffset + 26);
+        const localExtraLength = readUInt16(archive, localHeaderOffset + 28);
+        const dataStart = localHeaderOffset + 30 + localNameLength + localExtraLength;
+        const dataEnd = dataStart + compressedSize;
+        if (dataStart > archive.length || dataEnd > archive.length)
+            throw new Error(`ZIP entry is truncated: ${entryName}`);
+
+        const destination = path.resolve(outDir, entryName);
+        if (entryName.endsWith('/')) {
+            fs.mkdirSync(destination, { recursive: true });
+            continue;
+        }
+        const compressedData = archive.subarray(dataStart, dataEnd);
+        let fileData;
+        if (compressionMethod === 0)
+            fileData = compressedData;
+        else if (compressionMethod === 8)
+            fileData = inflateRawSync(compressedData);
+        else
+            throw new Error(`ZIP entry uses unsupported compression: ${entryName}`);
+        if (fileData.length !== uncompressedSize)
+            throw new Error(`ZIP entry size mismatch: ${entryName}`);
+        fs.mkdirSync(path.dirname(destination), { recursive: true });
+        fs.writeFileSync(destination, fileData);
     }
-    catch { }
-    throw new Error("No system unzip tool found (unzip/7z/busybox). Git mode is recommended on this panel.");
 }
 function copyRecursive(src, dest, ignore = [], relative = '', outList = []) {
     if (!fs.existsSync(dest))
@@ -133,7 +199,10 @@ function copyRecursive(src, dest, ignore = [], relative = '', outList = []) {
     }
 }
 async function updateViaZip(sock, chatId, message, zipOverride) {
-    const zipUrl = (zipOverride || config.updateZipUrl || process.env.UPDATE_ZIP_URL || '').trim();
+    const configuredZipUrl = (zipOverride || config.updateZipUrl || process.env.UPDATE_ZIP_URL || '').trim();
+    const zipUrl = /^https?:\/\//i.test(configuredZipUrl)
+        ? configuredZipUrl
+        : `https://${configuredZipUrl}`;
     if (!zipUrl) {
         throw new Error('No ZIP URL configured. Set config.updateZipUrl or UPDATE_ZIP_URL env.');
     }
