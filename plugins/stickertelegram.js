@@ -11,7 +11,7 @@ export default {
     description: 'Download stickers from Telegram',
     usage: '.tgstk <telegram sticker URL>',
     async handler(sock, message, args, context) {
-        const { chatId, config, channelInfo } = context;
+        const { chatId, config: botConfig, channelInfo } = context;
         try {
             if (!args[0]) {
                 await sock.sendMessage(chatId, {
@@ -28,7 +28,14 @@ export default {
                 return;
             }
             const packName = args[0].replace("https://t.me/addstickers/", "");
-            const botToken = '7801479976:AAGuPL0a7kXXBYz6XUSR_ll2SR5V_W6oHl4';
+            const botToken = botConfig.telegramBotToken;
+            if (!botToken) {
+                await sock.sendMessage(chatId, {
+                    text: '⚠️ Telegram sticker downloads are not configured. Set TELEGRAM_BOT_TOKEN in the deployment environment.',
+                    ...channelInfo
+                }, { quoted: message });
+                return;
+            }
             try {
                 const response = await fetch(`https://api.telegram.org/bot${botToken}/getStickerSet?name=${encodeURIComponent(packName)}`, {
                     method: "GET",
@@ -88,7 +95,7 @@ export default {
                         await img.load(webpBuffer);
                         const metadata = {
                             'sticker-pack-id': crypto.randomBytes(32).toString('hex'),
-                            'sticker-pack-name': config.packname,
+                            'sticker-pack-name': botConfig.packname,
                             'emojis': sticker.emoji ? [sticker.emoji] : ['🤖']
                         };
                         const exifAttr = Buffer.from([0x49, 0x49, 0x2A, 0x00, 0x08, 0x00, 0x00, 0x00, 0x01, 0x00, 0x41, 0x57, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x16, 0x00, 0x00, 0x00]);

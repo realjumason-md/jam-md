@@ -30,6 +30,7 @@ const config = {
     // deployment environment instead.
     giphyApiKey: process.env.GIPHY_API_KEY || '',
     removeBgKey: process.env.REMOVEBG_KEY || '',
+    telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || '',
     geminiApiKey: process.env.GEMINI_API_KEY || '',
     groqApiKey: process.env.GROQ_API_KEY || '',
     xaiApiKey: process.env.XAI_API_KEY || '',
