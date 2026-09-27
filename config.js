@@ -1,5 +1,7 @@
 import 'dotenv/config';
-const _prefixes = process.env.PREFIXES ? process.env.PREFIXES.split(',').map((prefix) => prefix.trim()).filter(Boolean) : ['.', '!', '£', '✨️', '👀'];
+const _prefixes = process.env.PREFIXES
+    ? process.env.PREFIXES.split(',').map((prefix) => prefix.trim()).filter(Boolean)
+    : ['.', '!', '/', '#'];
 const config = {
     // Bot Identity
     botName: process.env.BOT_NAME || 'jam-md',
