@@ -10,3 +10,8 @@ run = ["sh", "-c", "npm start"]
 [[ports]]
 localPort = 5000
 externalPort = 5000
+
+[userenv]
+
+[userenv.shared]
+UPDATE_URL = "https://github.com/realjumason-md/jam-md/archive/refs/heads/main.zip"
